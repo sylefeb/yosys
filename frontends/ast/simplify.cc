@@ -678,7 +678,9 @@ bool AstNode::simplify(bool const_fold, bool at_zero, bool in_lvalue, int stage,
 				delete node;
 		}
 
+		memwr_port_cnt.clear();
 		while (simplify(const_fold, at_zero, in_lvalue, 2, width_hint, sign_hint, in_param)) { }
+		memwr_port_cnt.clear();
 		recursion_counter--;
 		return false;
 	}
@@ -1169,6 +1171,14 @@ bool AstNode::simplify(bool const_fold, bool at_zero, bool in_lvalue, int stage,
 		}
 	}
 
+	pool<std::pair<std::string, int>> backup_memwr_visible;
+	pool<std::pair<std::string, int>> final_memwr_visible;
+
+	if (type == AST_CASE && stage == 2) {
+		backup_memwr_visible = current_memwr_visible;
+		final_memwr_visible = current_memwr_visible;
+	}
+
 	// simplify all children first
 	// (iterate by index as e.g. auto wires can add new children in the process)
 	for (size_t i = 0; i < children.size(); i++) {
@@ -1230,10 +1240,22 @@ bool AstNode::simplify(bool const_fold, bool at_zero, bool in_lvalue, int stage,
 			did_something = true;
 		}
 		flag_autowire = backup_flag_autowire;
+		if (stage == 2 && type == AST_CASE) {
+			for (auto &x : current_memwr_visible)
+				final_memwr_visible.insert(x);
+			current_memwr_visible = backup_memwr_visible;
+		}
 	}
 	for (auto &attr : attributes) {
 		while (attr.second->simplify(true, false, false, stage, -1, false, true))
 			did_something = true;
+	}
+
+	if (type == AST_CASE && stage == 2) {
+		current_memwr_visible = final_memwr_visible;
+	}
+	if (type == AST_ALWAYS && stage == 2) {
+		current_memwr_visible.clear();
 	}
 
 	if (reset_width_after_children) {
@@ -2659,7 +2681,19 @@ skip_dynamic_range_lvalue_expansion:;
 		AstNode *wrnode = new AstNode(current_always->type == AST_INITIAL ? AST_MEMINIT : AST_MEMWR, node_addr, node_data, node_en);
 		wrnode->str = children[0]->str;
 		wrnode->id2ast = children[0]->id2ast;
+		wrnode->location = location;
 		current_ast_mod->children.push_back(wrnode);
+		if (wrnode->type == AST_MEMWR) {
+			int portid = memwr_port_cnt[wrnode->str]++;
+			wrnode->children.push_back(mkconst_int(portid, false));
+			std::vector<RTLIL::State> priority_mask;
+			for (int i = 0; i < portid; i++) {
+				bool has_prio = current_memwr_visible.count(std::make_pair(wrnode->str, i));
+				priority_mask.push_back(State(has_prio));
+			}
+			wrnode->children.push_back(mkconst_bits(priority_mask, false));
+			current_memwr_visible.insert(std::make_pair(wrnode->str, portid));
+		}
 
 		if (newNode->children.empty()) {
 			delete newNode;

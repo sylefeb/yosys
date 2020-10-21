@@ -1370,7 +1370,8 @@ namespace {
 				param(ID::MEMID);
 				param_bool(ID::CLK_ENABLE);
 				param_bool(ID::CLK_POLARITY);
-				param(ID::PRIORITY);
+				param(ID::PORTID);
+				param(ID::PRIORITY_MASK);
 				port(ID::CLK, 1);
 				port(ID::EN, param(ID::WIDTH));
 				port(ID::ADDR, param(ID::ABITS));
@@ -1398,6 +1399,7 @@ namespace {
 				param_bits(ID::RD_TRANSPARENT, max(1, param(ID::RD_PORTS)));
 				param_bits(ID::WR_CLK_ENABLE, max(1, param(ID::WR_PORTS)));
 				param_bits(ID::WR_CLK_POLARITY, max(1, param(ID::WR_PORTS)));
+				param_bits(ID::WR_PRIORITY_MASK, max(1, param(ID::WR_PORTS) * param(ID::WR_PORTS)));
 				port(ID::RD_CLK, param(ID::RD_PORTS));
 				port(ID::RD_EN, param(ID::RD_PORTS));
 				port(ID::RD_ADDR, param(ID::RD_PORTS) * param(ID::ABITS));

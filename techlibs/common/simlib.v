@@ -2192,7 +2192,8 @@ parameter WIDTH = 8;
 
 parameter CLK_ENABLE = 0;
 parameter CLK_POLARITY = 0;
-parameter PRIORITY = 0;
+parameter PORTID = 0;
+parameter PRIORITY_MASK = 0;
 
 input CLK;
 input [WIDTH-1:0] EN;
@@ -2250,6 +2251,7 @@ parameter RD_TRANSPARENT = 1'b1;
 parameter signed WR_PORTS = 1;
 parameter WR_CLK_ENABLE = 1'b1;
 parameter WR_CLK_POLARITY = 1'b1;
+parameter WR_PRIORITY_MASK = 1'b1;
 
 input [RD_PORTS-1:0] RD_CLK;
 input [RD_PORTS-1:0] RD_EN;

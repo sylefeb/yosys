@@ -15,6 +15,7 @@ module \$mem (RD_CLK, RD_EN, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
 	parameter WR_PORTS = 1;
 	parameter WR_CLK_ENABLE = 1'b1;
 	parameter WR_CLK_POLARITY = 1'b1;
+	parameter WR_PRIORITY_MASK = 0;
 
 	input [RD_PORTS-1:0] RD_CLK;
 	input [RD_PORTS-1:0] RD_EN;

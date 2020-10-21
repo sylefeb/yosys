@@ -1256,7 +1256,7 @@ struct CxxrtlWorker {
 							f << ";\n";
 							std::sort(memwr_cells.begin(), memwr_cells.end(),
 								[](const RTLIL::Cell *a, const RTLIL::Cell *b) {
-									return a->getParam(ID::PRIORITY).as_int() < b->getParam(ID::PRIORITY).as_int();
+									return a->getParam(ID::PORTID).as_int() < b->getParam(ID::PORTID).as_int();
 								});
 							for (auto memwr_cell : memwr_cells) {
 								f << indent << "if (" << addr_temp << " == ";
@@ -1305,7 +1305,7 @@ struct CxxrtlWorker {
 					dump_sigspec_rhs(cell->getPort(ID::DATA));
 					f << ", ";
 					dump_sigspec_rhs(cell->getPort(ID::EN));
-					f << ", " << cell->getParam(ID::PRIORITY).as_int() << ");\n";
+					f << ", " << cell->getParam(ID::PORTID).as_int() << ");\n";
 				dec_indent();
 				f << indent << "}\n";
 			}

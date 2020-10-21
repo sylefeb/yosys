@@ -397,8 +397,15 @@ the \B{CLK} input is not used.
 Clock is active on positive edge if this parameter has the value {\tt 1'b1} and on the negative
 edge if this parameter is {\tt 1'b0}.
 
-\item \B{PRIORITY} \\
-The cell with the higher integer value in this parameter wins a write conflict.
+\item \B{PORTID} \\
+The 0-based numeric identifier of this write port, used to identify it in \B{PRIORITY\_MASK}.
+\end{itemize}
+
+\item \B{PRIORITY\_MASK} \\
+A bitmask of write ports that this port wins over in a write conflict — if the bit index corresponding
+to the other port's \B{PORTID} is set here, this port's writes win over the other port's writes
+when both happen simultanously.  The priority relationship should be a partial order.  If no port
+has priority over the other, the behavior of conflict is undefined.
 \end{itemize}
 
 The {\tt \$meminit} cells have an address input \B{ADDR} and a data input \B{DATA}, with the width
@@ -467,7 +474,12 @@ This parameter is \B{WR\_PORTS} bits wide, containing a clock enable bit for eac
 
 \item \B{WR\_CLK\_POLARITY} \\
 This parameter is \B{WR\_PORTS} bits wide, containing a clock polarity bit for each write port.
+
+\item \B{WR\_PRIORITY\_MASK} \\
+This parameter is \B{WR\_PORTS*WR\_PORTS} bits wide, containing a concatenation of all
+\B{PRIORITY\_MASK} values of the original {\tt \$memwr} cells.
 \end{itemize}
+
 
 The {\tt \$mem} cell has the following ports:
 

@@ -1609,9 +1609,11 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 				cell->setPort(ID::EN, children[2]->genRTLIL());
 				cell->parameters[ID::CLK_ENABLE] = RTLIL::Const(0);
 				cell->parameters[ID::CLK_POLARITY] = RTLIL::Const(0);
+				cell->parameters[ID::PORTID] = children[3]->asInt(false);
+				cell->parameters[ID::PRIORITY_MASK] = children[4]->bitsAsConst();
+			} else {
+				cell->parameters[ID::PRIORITY] = RTLIL::Const(autoidx-1);
 			}
-
-			cell->parameters[ID::PRIORITY] = RTLIL::Const(autoidx-1);
 		}
 		break;
 

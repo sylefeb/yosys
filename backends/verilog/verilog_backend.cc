@@ -529,7 +529,12 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				std::ostringstream os;
 				dump_sigspec(os, port.clk);
 				clk_domain_str = stringf("%sedge %s", port.clk_polarity ? "pos" : "neg", os.str().c_str());
-				if( clk_to_lof_body.count(clk_domain_str) == 0 )
+				if (port.arst != State::S0) {
+					std::ostringstream os;
+					dump_sigspec(os, port.arst);
+					clk_domain_str += stringf(", posedge %s", os.str().c_str());
+				}
+				if (clk_to_lof_body.count(clk_domain_str) == 0)
 					clk_to_lof_body[clk_domain_str] = std::vector<std::string>();
 			}
 			// for clocked read ports make something like:
@@ -539,6 +544,27 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 			//   assign r_data = temp_id;
 			std::string temp_id = next_auto_id();
 			lof_reg_declarations.push_back( stringf("reg [%d:0] %s;\n", port.data.size() - 1, temp_id.c_str()) );
+			bool do_indent = false;
+			if (port.arst != State::S0) {
+				std::ostringstream os;
+				os << stringf("if (");
+				dump_sigspec(os, port.arst);
+				os << stringf(") %s <= ", temp_id.c_str());
+				dump_sigspec(os, port.arst_value);
+				os << stringf("; else\n");
+				clk_to_lof_body[clk_domain_str].push_back(os.str());
+				do_indent = true;
+			}
+			if (port.srst != State::S0 && !port.ce_over_srst) {
+				std::ostringstream os;
+				os << stringf("if (");
+				dump_sigspec(os, port.srst);
+				os << stringf(") %s <= ", temp_id.c_str());
+				dump_sigspec(os, port.srst_value);
+				os << stringf("; else\n");
+				clk_to_lof_body[clk_domain_str].push_back(os.str());
+				do_indent = true;
+			}
 			bool has_en = (port.en != RTLIL::SigBit(true));
 			if (has_en)
 			{
@@ -547,11 +573,28 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				dump_sigspec(os, port.en);
 				os << stringf(") begin\n");
 				clk_to_lof_body[clk_domain_str].push_back(os.str());
+				do_indent = true;
+			} else if (do_indent) {
+				clk_to_lof_body[clk_domain_str].push_back("begin\n");
 			}
-			const char *indent = has_en ? "  " : "";
+			const char *indent = do_indent ? "  " : "";
+			bool do_indent2 = false;
+			const char *indent2 = indent;
+			if (port.srst != State::S0 && port.ce_over_srst) {
+				std::ostringstream os;
+				os << stringf("%sif (", indent);
+				dump_sigspec(os, port.srst);
+				os << stringf(") %s <= ", temp_id.c_str());
+				dump_sigspec(os, port.srst_value);
+				os << stringf("; else\n");
+				clk_to_lof_body[clk_domain_str].push_back(os.str());
+				clk_to_lof_body[clk_domain_str].push_back(stringf("%sbegin\n", indent));
+				do_indent2 = true;
+				indent2 = do_indent ? "    " : "  ";
+			}
 			{
 				std::ostringstream os;
-				os << stringf("%s%s <= %s[", indent, temp_id.c_str(), mem_id.c_str());
+				os << stringf("%s%s <= %s[", indent2, temp_id.c_str(), mem_id.c_str());
 				dump_sigspec(os, port.addr);
 				os << stringf("];\n");
 				clk_to_lof_body[clk_domain_str].push_back(os.str());
@@ -560,16 +603,16 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				if (port.transparency_mask[i]) {
 					auto &wport = mem.wr_ports[i];
 					bool addr_eq = wport.addr == port.addr;
-					const char *tindent = indent;
+					const char *indent3 = indent2;
 					if (!addr_eq) {
 						std::ostringstream os;
-						os << stringf("%sif (", indent);
+						os << stringf("%sif (", indent2);
 						dump_sigspec(os, port.addr);
 						os << stringf(" == ");
 						dump_sigspec(os, wport.addr);
 						os << stringf(") begin\n");
 						clk_to_lof_body[clk_domain_str].push_back(os.str());
-						tindent = has_en ? "    " : "  ";
+						indent3 = (do_indent && do_indent2) ? "      " : (do_indent || do_indent2) ? "    " : "  ";
 					}
 					for (int j = 0; j < GetSize(wport.en); j++)
 					{
@@ -583,7 +626,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 							continue;
 
 						std::ostringstream os;
-						os << tindent;
+						os << indent3;
 						if (wen_bit != State::S1)
 						{
 							os << stringf("if (");
@@ -600,12 +643,21 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 						clk_to_lof_body[clk_domain_str].push_back(os.str());
 					}
 					if (!addr_eq) {
-						clk_to_lof_body[clk_domain_str].push_back(stringf("%send;\n", indent));
+						clk_to_lof_body[clk_domain_str].push_back(stringf("%send\n", indent2));
 					}
 				}
 			}
-			if (has_en) {
-				clk_to_lof_body[clk_domain_str].push_back("end;\n");
+			if (do_indent2) {
+				clk_to_lof_body[clk_domain_str].push_back(stringf("%send\n", indent));
+			}
+			if (do_indent) {
+				clk_to_lof_body[clk_domain_str].push_back("end\n");
+			}
+			if (!port.init_value.is_fully_undef()) {
+				std::ostringstream os;
+				dump_sigspec(os, port.init_value);
+				std::string line = stringf("initial %s = %s;\n", temp_id.c_str(), os.str().c_str());
+				clk_to_lof_body[""].push_back(line);
 			}
 			{
 				std::ostringstream os;

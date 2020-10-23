@@ -22,6 +22,7 @@
 #include "kernel/sigtools.h"
 #include "kernel/ffinit.h"
 #include "kernel/mem.h"
+#include "kernel/ff.h"
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -31,10 +32,11 @@ struct MemoryDffWorker
 	Module *module;
 	SigMap sigmap;
 
-	vector<Cell*> dff_cells;
-	dict<SigBit, SigBit> invbits;
+	dict<SigBit, std::pair<Cell*, int>> dff_driver;
+	dict<SigBit, pool<std::pair<Cell*, int>>> dff_sink;
 	dict<SigBit, int> sigbit_users_count;
-	pool<Cell*> forward_merged_dffs, candidate_dffs;
+	pool<std::pair<Cell*, int>> fwd_merged_bits;
+	pool<std::pair<Cell*, int>> rev_merged_bits;
 	FfInitVals initvals;
 
 	MemoryDffWorker(Module *module) : module(module), sigmap(module)
@@ -61,138 +63,149 @@ struct MemoryDffWorker
 			if (initvals(bit) != State::Sx)
 				return false;
 
-			for (auto cell : dff_cells)
-			{
-				SigSpec this_clk = cell->getPort(ID::CLK);
-				bool this_clk_polarity = cell->parameters[ID::CLK_POLARITY].as_bool();
+			if (!dff_driver.count(bit))
+				return false;
 
-				if (invbits.count(this_clk)) {
-					this_clk = invbits.at(this_clk);
-					this_clk_polarity = !this_clk_polarity;
-				}
+			Cell *cell;
+			int idx;
+			std::tie(cell, idx) = dff_driver[bit];
+			if (fwd_merged_bits.count(std::make_pair(cell, idx)))
+				return false;
 
-				if (clk != RTLIL::SigSpec(RTLIL::State::Sx)) {
-					if (this_clk != clk)
-						continue;
-					if (this_clk_polarity != clk_polarity)
-						continue;
-				}
+			if (cell->type.in(ID($adff), ID($adffe)))
+				return false;
 
-				RTLIL::SigSpec q_norm = cell->getPort(ID::Q);
-				sigmap.apply(q_norm);
+			SigSpec this_clk = cell->getPort(ID::CLK);
+			bool this_clk_polarity = cell->parameters[ID::CLK_POLARITY].as_bool();
 
-				RTLIL::SigSpec d = q_norm.extract(bit, &cell->getPort(ID::D));
-				if (d.size() != 1)
-					continue;
-
-				if (cell->type == ID($sdffce)) {
-					SigSpec rval = cell->parameters[ID::SRST_VALUE];
-					SigSpec rbit = q_norm.extract(bit, &rval);
-					if (cell->parameters[ID::SRST_POLARITY].as_bool())
-						d = module->Mux(NEW_ID, d, rbit, cell->getPort(ID::SRST));
-					else
-						d = module->Mux(NEW_ID, rbit, d, cell->getPort(ID::SRST));
-				}
-
-				if (cell->type.in(ID($dffe), ID($sdffe), ID($sdffce))) {
-					if (cell->parameters[ID::EN_POLARITY].as_bool())
-						d = module->Mux(NEW_ID, bit, d, cell->getPort(ID::EN));
-					else
-						d = module->Mux(NEW_ID, d, bit, cell->getPort(ID::EN));
-				}
-
-				if (cell->type.in(ID($sdff), ID($sdffe))) {
-					SigSpec rval = cell->parameters[ID::SRST_VALUE];
-					SigSpec rbit = q_norm.extract(bit, &rval);
-					if (cell->parameters[ID::SRST_POLARITY].as_bool())
-						d = module->Mux(NEW_ID, d, rbit, cell->getPort(ID::SRST));
-					else
-						d = module->Mux(NEW_ID, rbit, d, cell->getPort(ID::SRST));
-				}
-
-				cache[bit] = d;
-				bit = d;
-				clk = this_clk;
-				clk_polarity = this_clk_polarity;
-				candidate_dffs.insert(cell);
-				goto replaced_this_bit;
+			if (clk != RTLIL::SigSpec(RTLIL::State::Sx)) {
+				if (this_clk != clk)
+					return false;
+				if (this_clk_polarity != clk_polarity)
+					return false;
 			}
 
-			return false;
-		replaced_this_bit:;
+			RTLIL::SigSpec d = cell->getPort(ID::D)[idx];
+
+			if (cell->type == ID($sdffce)) {
+				SigSpec rbit = cell->parameters[ID::SRST_VALUE][idx];
+				if (cell->parameters[ID::SRST_POLARITY].as_bool())
+					d = module->Mux(NEW_ID, d, rbit, cell->getPort(ID::SRST));
+				else
+					d = module->Mux(NEW_ID, rbit, d, cell->getPort(ID::SRST));
+			}
+
+			if (cell->type.in(ID($dffe), ID($sdffe), ID($sdffce))) {
+				if (cell->parameters[ID::EN_POLARITY].as_bool())
+					d = module->Mux(NEW_ID, bit, d, cell->getPort(ID::EN));
+				else
+					d = module->Mux(NEW_ID, d, bit, cell->getPort(ID::EN));
+			}
+
+			if (cell->type.in(ID($sdff), ID($sdffe))) {
+				SigSpec rbit = cell->parameters[ID::SRST_VALUE][idx];
+				if (cell->parameters[ID::SRST_POLARITY].as_bool())
+					d = module->Mux(NEW_ID, d, rbit, cell->getPort(ID::SRST));
+				else
+					d = module->Mux(NEW_ID, rbit, d, cell->getPort(ID::SRST));
+			}
+
+			cache[bit] = d;
+			bit = d;
+			clk = this_clk;
+			clk_polarity = this_clk_polarity;
+			rev_merged_bits.insert(std::make_pair(cell, idx));
 		}
 
 		return true;
 	}
 
-	bool find_sig_after_dffe(RTLIL::SigSpec &sig, RTLIL::SigSpec &clk, bool &clk_polarity, RTLIL::SigSpec &en, bool &en_polarity)
+	bool find_sig_after_ff(RTLIL::SigSpec sig, FfData &ff, pool<std::pair<Cell *, int>> &disconnect)
 	{
 		sigmap.apply(sig);
 
 		for (auto &bit : sig)
 		{
-			if (bit.wire == NULL)
+			if (bit.wire == NULL || sigbit_users_count[bit] == 0) {
+				ff.width++;
+				ff.sig_q.append(bit);
+				ff.sig_d.append(State::Sx);
+				ff.val_init.bits.push_back(State::Sx);
+				ff.val_srst.bits.push_back(State::Sx);
+				ff.val_arst.bits.push_back(State::Sx);
 				continue;
-
-			for (auto cell : dff_cells)
-			{
-				if (forward_merged_dffs.count(cell))
-					continue;
-				if (!cell->type.in(ID($dff), ID($dffe)))
-					continue;
-
-				SigSpec this_clk = cell->getPort(ID::CLK);
-				bool this_clk_polarity = cell->parameters[ID::CLK_POLARITY].as_bool();
-				SigSpec this_en = State::S1;
-				bool this_en_polarity = true;
-
-				if (cell->type == ID($dffe)) {
-					this_en = cell->getPort(ID::EN);
-					this_en_polarity = cell->parameters[ID::EN_POLARITY].as_bool();
-				}
-
-				if (invbits.count(this_clk)) {
-					this_clk = invbits.at(this_clk);
-					this_clk_polarity = !this_clk_polarity;
-				}
-
-				if (invbits.count(this_en)) {
-					this_en = invbits.at(this_en);
-					this_en_polarity = !this_en_polarity;
-				}
-
-				if (clk != RTLIL::SigSpec(RTLIL::State::Sx)) {
-					if (this_clk != clk)
-						continue;
-					if (this_clk_polarity != clk_polarity)
-						continue;
-					if (this_en != en)
-						continue;
-					if (this_en_polarity != en_polarity)
-						continue;
-				}
-
-				RTLIL::SigSpec q_norm = cell->getPort(ID::D);
-				sigmap.apply(q_norm);
-
-				RTLIL::SigSpec d = q_norm.extract(bit, &cell->getPort(ID::Q));
-				if (d.size() != 1)
-					continue;
-
-				if (initvals(d) != State::Sx)
-					return false;
-
-				bit = d;
-				clk = this_clk;
-				clk_polarity = this_clk_polarity;
-				en = this_en;
-				en_polarity = this_en_polarity;
-				candidate_dffs.insert(cell);
-				goto replaced_this_bit;
 			}
 
-			return false;
-		replaced_this_bit:;
+			if (sigbit_users_count[bit] != 1)
+				return false;
+
+			auto &sinks = dff_sink[bit];
+			if (sinks.size() != 1)
+				return false;
+
+			Cell *cell;
+			int idx;
+			std::tie(cell, idx) = *sinks.begin();
+			disconnect.insert(std::make_pair(cell, idx));
+
+			if (rev_merged_bits.count(std::make_pair(cell, idx)))
+				return false;
+
+			FfData cur_ff(&initvals, cell);
+
+			if (!ff.has_clk) {
+				ff.sig_clk = cur_ff.sig_clk;
+				ff.sig_en = cur_ff.sig_en;
+				ff.sig_srst = cur_ff.sig_srst;
+				ff.sig_arst = cur_ff.sig_arst;
+				ff.has_clk = cur_ff.has_clk;
+				ff.has_en = cur_ff.has_en;
+				ff.has_srst = cur_ff.has_srst;
+				ff.has_arst = cur_ff.has_arst;
+				ff.ce_over_srst = cur_ff.ce_over_srst;
+				ff.pol_clk = cur_ff.pol_clk;
+				ff.pol_en = cur_ff.pol_en;
+				ff.pol_arst = cur_ff.pol_arst;
+				ff.pol_srst = cur_ff.pol_srst;
+			} else {
+				if (ff.sig_clk != cur_ff.sig_clk)
+					return false;
+				if (ff.pol_clk != cur_ff.pol_clk)
+					return false;
+				if (ff.has_en != cur_ff.has_en)
+					return false;
+				if (ff.has_srst != cur_ff.has_srst)
+					return false;
+				if (ff.has_arst != cur_ff.has_arst)
+					return false;
+				if (ff.has_en) {
+					if (ff.sig_en != cur_ff.sig_en)
+						return false;
+					if (ff.pol_en != cur_ff.pol_en)
+						return false;
+				}
+				if (ff.has_srst) {
+					if (ff.sig_srst != cur_ff.sig_srst)
+						return false;
+					if (ff.pol_srst != cur_ff.pol_srst)
+						return false;
+					if (ff.has_en && ff.ce_over_srst != cur_ff.ce_over_srst)
+						return false;
+				}
+				if (ff.has_arst) {
+					if (ff.sig_arst != cur_ff.sig_arst)
+						return false;
+					if (ff.pol_arst != cur_ff.pol_arst)
+						return false;
+				}
+			}
+
+			ff.width++;
+			ff.sig_d.append(cur_ff.sig_d[idx]);
+			ff.sig_q.append(cur_ff.sig_q[idx]);
+			ff.val_arst.bits.push_back(ff.has_arst ? cur_ff.val_arst[idx] : State::Sx);
+			ff.val_srst.bits.push_back(ff.has_srst ? cur_ff.val_srst[idx] : State::Sx);
+			ff.val_init.bits.push_back(cur_ff.val_init[idx]);
 		}
 
 		return true;
@@ -206,7 +219,6 @@ struct MemoryDffWorker
 
 		RTLIL::SigSpec clk = RTLIL::SigSpec(RTLIL::State::Sx);
 		bool clk_polarity = 0;
-		candidate_dffs.clear();
 
 		RTLIL::SigSpec sig_addr = port.addr;
 		if (!find_sig_before_dff(sig_addr, clk, clk_polarity)) {
@@ -228,9 +240,6 @@ struct MemoryDffWorker
 
 		if (clk != RTLIL::SigSpec(RTLIL::State::Sx))
 		{
-			for (auto cell : candidate_dffs)
-				forward_merged_dffs.insert(cell);
-
 			port.clk = clk;
 			port.addr = sig_addr;
 			port.data = sig_data;
@@ -246,57 +255,65 @@ struct MemoryDffWorker
 		log("no (compatible) $dff found.\n");
 	}
 
-	void disconnect_dff(RTLIL::SigSpec sig)
-	{
-		sigmap.apply(sig);
-		sig.sort_and_unify();
-
-		std::stringstream sstr;
-		sstr << "$memory_dff_disconnected$" << (autoidx++);
-
-		RTLIL::SigSpec new_sig = module->addWire(sstr.str(), sig.size());
-
-		for (auto cell : module->cells())
-			if (cell->type.in(ID($dff), ID($dffe))) {
-				RTLIL::SigSpec new_q = cell->getPort(ID::Q);
-				new_q.replace(sig, new_sig);
-				cell->setPort(ID::Q, new_q);
-			}
-	}
-
 	void handle_rd_port(Mem &mem, int idx)
 	{
 		auto &port = mem.rd_ports[idx];
 		log("Checking read port `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
 
-		bool clk_polarity = 0;
-		bool en_polarity = 0;
-
-		RTLIL::SigSpec clk_data = RTLIL::SigSpec(RTLIL::State::Sx);
-		RTLIL::SigSpec en_data;
-		RTLIL::SigSpec sig_data = port.data;
-
-		for (auto bit : sigmap(sig_data))
-			if (sigbit_users_count[bit] > 1)
-				goto skip_ff_after_read_merging;
-
-		if (find_sig_after_dffe(sig_data, clk_data, clk_polarity, en_data, en_polarity) && clk_data != RTLIL::SigSpec(RTLIL::State::Sx))
+		FfData ff(&initvals);
+		pool<std::pair<Cell *, int>> disconnect;
+		if (find_sig_after_ff(port.data, ff, disconnect) && ff.has_clk)
 		{
-			if (!en_polarity)
-				en_data = module->LogicNot(NEW_ID, en_data);
-			disconnect_dff(sig_data);
-			port.clk = clk_data;
-			port.en = en_data;
-			port.data = sig_data;
+			if (ff.has_en && !ff.pol_en)
+				ff.sig_en = module->LogicNot(NEW_ID, ff.sig_en);
+			if (ff.has_arst && !ff.pol_arst)
+				ff.sig_arst = module->LogicNot(NEW_ID, ff.sig_arst);
+			if (ff.has_srst && !ff.pol_srst)
+				ff.sig_srst = module->LogicNot(NEW_ID, ff.sig_srst);
+			for (auto &it : disconnect) {
+				Cell *cell = it.first;
+				int idx = it.second;
+				SigSpec q = cell->getPort(ID::Q);
+				initvals.remove_init(q[idx]);
+				q[idx] = module->addWire(stringf("$memory_dff_disconnected$%d", autoidx++));
+				cell->setPort(ID::Q, q);
+				fwd_merged_bits.insert(it);
+			}
+			port.clk = ff.sig_clk;
 			port.clk_enable = true;
-			port.clk_polarity = clk_polarity;
+			port.clk_polarity = ff.pol_clk;
+			if (ff.has_en)
+				port.en = ff.sig_en;
+			else
+				port.en = State::S1;
+			if (ff.has_arst) {
+				port.arst = ff.sig_arst;
+				port.arst_value = ff.val_arst;
+			} else {
+				port.arst = State::S0;
+			}
+			if (ff.has_srst) {
+				port.srst = ff.sig_srst;
+				port.srst_value = ff.val_srst;
+				port.ce_over_srst = ff.ce_over_srst;
+			} else {
+				port.srst = State::S0;
+			}
+			port.init_value = ff.val_init;
+			port.data = ff.sig_q;
 			mem.emit();
 			log("merged data $dff to cell.\n");
 			return;
 		}
+	}
 
-	skip_ff_after_read_merging:;
+	void handle_rd_port_addr(Mem &mem, int idx)
+	{
+		auto &port = mem.rd_ports[idx];
+		log("Checking read port address `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
+
 		RTLIL::SigSpec clk_addr = RTLIL::SigSpec(RTLIL::State::Sx);
+		bool clk_polarity = 0;
 		RTLIL::SigSpec sig_addr = port.addr;
 		if (find_sig_before_dff(sig_addr, clk_addr, clk_polarity) &&
 				clk_addr != RTLIL::SigSpec(RTLIL::State::Sx))
@@ -331,17 +348,13 @@ struct MemoryDffWorker
 		}
 
 		for (auto cell : module->cells()) {
-			if (cell->type.in(ID($dff), ID($dffe), ID($sdff), ID($sdffe), ID($sdffce)))
-				dff_cells.push_back(cell);
-			if (cell->type.in(ID($not), ID($_NOT_)) || (cell->type == ID($logic_not) && GetSize(cell->getPort(ID::A)) == 1)) {
-				SigSpec sig_a = cell->getPort(ID::A);
-				SigSpec sig_y = cell->getPort(ID::Y);
-				if (cell->type == ID($not))
-					sig_a.extend_u0(GetSize(sig_y), cell->getParam(ID::A_SIGNED).as_bool());
-				if (cell->type == ID($logic_not))
-					sig_y.extend_u0(1);
-				for (int i = 0; i < GetSize(sig_y); i++)
-					invbits[sig_y[i]] = sig_a[i];
+			if (cell->type.in(ID($dff), ID($dffe), ID($sdff), ID($sdffe), ID($sdffce), ID($adff), ID($adffe))) {
+				SigSpec d = cell->getPort(ID::D);
+				SigSpec q = cell->getPort(ID::Q);
+				for (int i = 0; i < GetSize(d); i++)
+					dff_sink[d[i]].insert(std::make_pair(cell, i));
+				for (int i = 0; i < GetSize(q); i++)
+					dff_driver[q[i]] = std::make_pair(cell, i);
 			}
 			for (auto &conn : cell->connections())
 				if (!cell->known() || cell->input(conn.first))
@@ -362,6 +375,12 @@ struct MemoryDffWorker
 				for (int i = 0; i < GetSize(mem.rd_ports); i++) {
 					if (!mem.rd_ports[i].clk_enable)
 						handle_rd_port(mem, i);
+				}
+			}
+			for (auto &mem : memories) {
+				for (int i = 0; i < GetSize(mem.rd_ports); i++) {
+					if (!mem.rd_ports[i].clk_enable)
+						handle_rd_port_addr(mem, i);
 				}
 			}
 		}

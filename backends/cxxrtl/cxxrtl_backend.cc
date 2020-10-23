@@ -638,6 +638,7 @@ struct CxxrtlWorker {
 	dict<RTLIL::SigBit, bool> bit_has_state;
 	dict<const RTLIL::Module*, pool<std::string>> blackbox_specializations;
 	dict<const RTLIL::Module*, bool> eval_converges;
+	dict<const RTLIL::Wire*, RTLIL::Const> init_value;
 
 	void inc_indent() {
 		indent += "\t";
@@ -1227,11 +1228,41 @@ struct CxxrtlWorker {
 			dump_sigspec_rhs(cell->getPort(ID::ADDR));
 			f << ", " << memory->start_offset << ", " << memory->size << ");\n";
 			if (cell->type == ID($memrd)) {
+				bool has_srst = cell->getPort(ID::SRST) != State::S0;
+				bool ce_over_srst = cell->getParam(ID::CE_OVER_SRST).as_bool();
 				bool has_enable = cell->getParam(ID::CLK_ENABLE).as_bool() && !cell->getPort(ID::EN).is_fully_ones();
 				if (has_enable) {
-					f << indent << "if (";
+					if (has_srst && !ce_over_srst) {
+						f << indent << "if (";
+						dump_sigspec_rhs(cell->getPort(ID::SRST));
+						f << ") {\n";
+						inc_indent();
+							f << indent;
+							dump_sigspec_lhs(cell->getPort(ID::DATA));
+							f << " = ";
+							dump_const(cell->getParam(ID::SRST_VALUE));
+							f << ";\n";
+						dec_indent();
+						f << indent << "} else if (";
+					} else {
+						f << indent << "if (";
+					}
 					dump_sigspec_rhs(cell->getPort(ID::EN));
 					f << ") {\n";
+					inc_indent();
+				}
+				if (has_srst && (ce_over_srst || !has_enable)) {
+					f << indent << "if (";
+					dump_sigspec_rhs(cell->getPort(ID::SRST));
+					f << ") {\n";
+					inc_indent();
+						f << indent;
+						dump_sigspec_lhs(cell->getPort(ID::DATA));
+						f << " = ";
+						dump_const(cell->getParam(ID::SRST_VALUE));
+						f << ";\n";
+					dec_indent();
+					f << indent << "} else {\n";
 					inc_indent();
 				}
 				// The generated code has two bounds checks; one in an assertion, and another that guards the read.
@@ -1289,6 +1320,10 @@ struct CxxrtlWorker {
 					f << " = value<" << memory->width << "> {};\n";
 				dec_indent();
 				f << indent << "}\n";
+				if (has_srst && (ce_over_srst || !has_enable)) {
+					dec_indent();
+					f << indent << "}\n";
+				}
 				if (has_enable) {
 					dec_indent();
 					f << indent << "}\n";
@@ -1310,6 +1345,19 @@ struct CxxrtlWorker {
 				f << indent << "}\n";
 			}
 			if (cell->getParam(ID::CLK_ENABLE).as_bool()) {
+				dec_indent();
+				f << indent << "}\n";
+			}
+			if (cell->type == ID($memrd) && cell->getPort(ID::ARST) != State::S0) {
+				f << indent << "if (";
+				dump_sigspec_rhs(cell->getPort(ID::ARST));
+				f << ") {\n";
+				inc_indent();
+					f << indent;
+					dump_sigspec_lhs(cell->getPort(ID::DATA));
+					f << " = ";
+					dump_const(cell->getParam(ID::ARST_VALUE));
+					f << ";\n";
 				dec_indent();
 				f << indent << "}\n";
 			}
@@ -1573,17 +1621,17 @@ struct CxxrtlWorker {
 			f << "<" << wire->width << ">";
 		}
 		f << " " << mangle(wire);
-		if (wire->has_attribute(ID::init)) {
+		if (init_value.count(wire)) {
 			f << " ";
-			dump_const_init(wire->attributes.at(ID::init));
+			dump_const_init(init_value[wire]);
 		}
 		f << ";\n";
 		if (edge_wires[wire]) {
 			if (!wire_type.is_buffered()) {
 				f << indent << "value<" << wire->width << "> prev_" << mangle(wire);
-				if (wire->has_attribute(ID::init)) {
+				if (init_value.count(wire)) {
 					f << " ";
-					dump_const_init(wire->attributes.at(ID::init));
+					dump_const_init(init_value[wire]);
 				}
 				f << ";\n";
 			}
@@ -2336,6 +2384,9 @@ struct CxxrtlWorker {
 			dict<const RTLIL::Cell*, FlowGraph::Node*> memrw_cell_nodes;
 			dict<std::pair<RTLIL::SigBit, const RTLIL::Memory*>,
 			     pool<const RTLIL::Cell*>> memwr_per_domain;
+			for (auto wire : module->wires())
+				if (wire->has_attribute(ID::init))
+					init_value[wire] = wire->attributes.at(ID::init);
 			for (auto cell : module->cells()) {
 				if (!cell->known())
 					log_cmd_error("Unknown cell `%s'.\n", log_id(cell->type));
@@ -2399,6 +2450,16 @@ struct CxxrtlWorker {
 						flow.add_uses(memrw_cell_nodes[cell], memwr_cell->getPort(ID::EN));
 						flow.add_uses(memrw_cell_nodes[cell], memwr_cell->getPort(ID::ADDR));
 						flow.add_uses(memrw_cell_nodes[cell], memwr_cell->getPort(ID::DATA));
+					}
+					Const initval = cell->getParam(ID::INIT_VALUE);
+					SigSpec sig_d = cell->getPort(ID::DATA);
+					for (int i = 0; i < GetSize(initval); i++) {
+						if (initval[i] == State::Sx)
+							continue;
+						SigBit bit_d = sig_d[i];
+						if (!init_value.count(bit_d.wire))
+							init_value[bit_d.wire] = Const(State::Sx, bit_d.wire->width);
+						init_value[bit_d.wire][bit_d.offset] = initval[i];
 					}
 				}
 			}

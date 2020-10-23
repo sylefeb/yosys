@@ -51,8 +51,16 @@ struct OptMemPass : public Pass {
 
 		int total_count = 0;
 		for (auto module : design->selected_modules()) {
+			SigMap sigmap(module);
+			FfInitVals initvals(&sigmap, module);
 			for (auto &mem : Mem::get_selected_memories(module)) {
 				if (mem.wr_ports.empty() && mem.inits.empty()) {
+					// The read ports are useless, but
+					// the embedded read registers could have
+					// reset or init values.
+					for (int i = 0; i < GetSize(mem.rd_ports); i++) {
+						mem.extract_rdff(i, &initvals);
+					}
 					mem.remove();
 					total_count++;
 				}

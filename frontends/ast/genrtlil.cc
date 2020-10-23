@@ -1556,7 +1556,9 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 			RTLIL::SigSpec addr_sig = children[0]->genRTLIL();
 
 			cell->setPort(ID::CLK, RTLIL::SigSpec(RTLIL::State::Sx, 1));
-			cell->setPort(ID::EN, RTLIL::SigSpec(RTLIL::State::Sx, 1));
+			cell->setPort(ID::EN, RTLIL::SigSpec(RTLIL::State::S1, 1));
+			cell->setPort(ID::ARST, RTLIL::SigSpec(RTLIL::State::S0, 1));
+			cell->setPort(ID::SRST, RTLIL::SigSpec(RTLIL::State::S0, 1));
 			cell->setPort(ID::ADDR, addr_sig);
 			cell->setPort(ID::DATA, RTLIL::SigSpec(wire));
 
@@ -1567,6 +1569,10 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 			cell->parameters[ID::CLK_ENABLE] = RTLIL::Const(0);
 			cell->parameters[ID::CLK_POLARITY] = RTLIL::Const(0);
 			cell->parameters[ID::TRANSPARENCY_MASK] = RTLIL::Const(0);
+			cell->parameters[ID::CE_OVER_SRST] = RTLIL::Const(0);
+			cell->parameters[ID::ARST_VALUE] = RTLIL::Const(State::Sx, wire->width);
+			cell->parameters[ID::SRST_VALUE] = RTLIL::Const(State::Sx, wire->width);
+			cell->parameters[ID::INIT_VALUE] = RTLIL::Const(State::Sx, wire->width);
 
 			if (!sign_hint)
 				is_signed = false;

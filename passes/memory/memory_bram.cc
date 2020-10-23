@@ -1073,6 +1073,17 @@ void handle_memory(Mem &mem, const rules_t &rules)
 		log(" %s=%d", it.first.c_str(), it.second);
 	log("\n");
 
+	for (auto &port : mem.rd_ports) {
+		if (port.arst != State::S0 || port.srst != State::S0) {
+			log("Read ports with reset are not supported, skipping.\n");
+			return;
+		}
+		if (!port.init_value.is_fully_undef()) {
+			log("Read ports with initial value are not supported, skipping.\n");
+			return;
+		}
+	}
+
 	pool<pair<IdString, int>> failed_brams;
 	dict<pair<int, int>, tuple<int, int, int>> best_rule_cache;
 

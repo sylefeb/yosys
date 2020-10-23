@@ -21,15 +21,17 @@
 #define MEM_H
 
 #include "kernel/yosys.h"
+#include "kernel/ffinit.h"
 
 YOSYS_NAMESPACE_BEGIN
 
 struct MemRd {
 	dict<IdString, Const> attributes;
 	Cell *cell;
-	bool clk_enable, clk_polarity;
+	bool clk_enable, clk_polarity, ce_over_srst;
+	Const arst_value, srst_value, init_value;
 	std::vector<bool> transparency_mask;
-	SigSpec clk, en, addr, data;
+	SigSpec clk, en, arst, srst, addr, data;
 	MemRd() : cell(nullptr) {}
 };
 
@@ -70,7 +72,7 @@ struct Mem {
 	Const get_init_data() const;
 	static std::vector<Mem> get_all_memories(Module *module);
 	static std::vector<Mem> get_selected_memories(Module *module);
-	Cell *extract_rdff(int idx);
+	Cell *extract_rdff(int idx, FfInitVals *initvals);
 	Mem(Module *module, IdString memid, int width, int start_offset, int size) : module(module), memid(memid), packed(false), mem(nullptr), cell(nullptr), width(width), start_offset(start_offset), size(size) {}
 };
 

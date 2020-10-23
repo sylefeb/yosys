@@ -1,5 +1,5 @@
 
-module \$mem (RD_CLK, RD_EN, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
+module \$mem (RD_CLK, RD_EN, RD_ARST, RD_SRST, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
 	parameter MEMID = "";
 	parameter SIZE = 256;
 	parameter OFFSET = 0;
@@ -11,6 +11,10 @@ module \$mem (RD_CLK, RD_EN, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
 	parameter RD_CLK_ENABLE = 1'b1;
 	parameter RD_CLK_POLARITY = 1'b1;
 	parameter RD_TRANSPARENCY_MASK = 0;
+	parameter RD_CE_OVER_SRST = 1'b0;
+	parameter RD_ARST_VALUE = 1'b0;
+	parameter RD_SRST_VALUE = 1'b0;
+	parameter RD_INIT_VALUE = 1'b0;
 
 	parameter WR_PORTS = 1;
 	parameter WR_CLK_ENABLE = 1'b1;
@@ -19,6 +23,8 @@ module \$mem (RD_CLK, RD_EN, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
 
 	input [RD_PORTS-1:0] RD_CLK;
 	input [RD_PORTS-1:0] RD_EN;
+	input [RD_PORTS-1:0] RD_ARST;
+	input [RD_PORTS-1:0] RD_SRST;
 	input [RD_PORTS*ABITS-1:0] RD_ADDR;
 	output reg [RD_PORTS*WIDTH-1:0] RD_DATA;
 

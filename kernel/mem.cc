@@ -18,6 +18,7 @@
  */
 
 #include "kernel/mem.h"
+#include "kernel/ff.h"
 
 USING_YOSYS_NAMESPACE
 
@@ -72,7 +73,9 @@ void Mem::emit() {
 		cell->parameters[ID::WR_PORTS] = Const(GetSize(wr_ports));
 		Const rd_clk_enable, rd_clk_polarity, rd_transparency_mask;
 		Const wr_clk_enable, wr_clk_polarity, wr_priority_mask;
+		Const rd_ce_over_srst, rd_arst_value, rd_srst_value, rd_init_value;
 		SigSpec rd_clk, rd_en, rd_addr, rd_data;
+		SigSpec rd_arst, rd_srst;
 		SigSpec wr_clk, wr_en, wr_addr, wr_data;
 		int abits = 0;
 		for (auto &port : rd_ports)
@@ -90,8 +93,22 @@ void Mem::emit() {
 			log_assert(GetSize(port.transparency_mask) == GetSize(wr_ports));
 			for (bool bit : port.transparency_mask)
 				rd_transparency_mask.bits.push_back(State(bit));
+			rd_ce_over_srst.bits.push_back(State(port.ce_over_srst));
+			log_assert(GetSize(port.arst_value) == width);
+			for (auto &bit : port.arst_value)
+				rd_arst_value.bits.push_back(bit);
+			log_assert(GetSize(port.srst_value) == width);
+			for (auto &bit : port.srst_value)
+				rd_srst_value.bits.push_back(bit);
+			log_assert(GetSize(port.init_value) == width);
+			for (auto &bit : port.init_value)
+				rd_init_value.bits.push_back(bit);
 			rd_clk.append(port.clk);
 			log_assert(GetSize(port.clk) == 1);
+			rd_arst.append(port.arst);
+			log_assert(GetSize(port.arst) == 1);
+			rd_srst.append(port.srst);
+			log_assert(GetSize(port.srst) == 1);
 			rd_en.append(port.en);
 			log_assert(GetSize(port.en) == 1);
 			SigSpec addr = port.addr;
@@ -105,6 +122,10 @@ void Mem::emit() {
 			rd_clk_enable = State::S0;
 			rd_clk_polarity = State::S0;
 			rd_transparency_mask = State::S0;
+			rd_ce_over_srst = State::S0;
+			rd_arst_value = State::S0;
+			rd_srst_value = State::S0;
+			rd_init_value = State::S0;
 		}
 		if (wr_ports.empty()) {
 			rd_transparency_mask = State::S0;
@@ -112,8 +133,14 @@ void Mem::emit() {
 		cell->parameters[ID::RD_CLK_ENABLE] = rd_clk_enable;
 		cell->parameters[ID::RD_CLK_POLARITY] = rd_clk_polarity;
 		cell->parameters[ID::RD_TRANSPARENCY_MASK] = rd_transparency_mask;
+		cell->parameters[ID::RD_CE_OVER_SRST] = rd_ce_over_srst;
+		cell->parameters[ID::RD_ARST_VALUE] = rd_arst_value;
+		cell->parameters[ID::RD_SRST_VALUE] = rd_srst_value;
+		cell->parameters[ID::RD_INIT_VALUE] = rd_init_value;
 		cell->setPort(ID::RD_CLK, rd_clk);
 		cell->setPort(ID::RD_EN, rd_en);
+		cell->setPort(ID::RD_ARST, rd_arst);
+		cell->setPort(ID::RD_SRST, rd_srst);
 		cell->setPort(ID::RD_ADDR, rd_addr);
 		cell->setPort(ID::RD_DATA, rd_data);
 		for (auto &port : wr_ports) {
@@ -180,8 +207,14 @@ void Mem::emit() {
 			port.cell->parameters[ID::CLK_ENABLE] = port.clk_enable;
 			port.cell->parameters[ID::CLK_POLARITY] = port.clk_polarity;
 			port.cell->parameters[ID::TRANSPARENCY_MASK] = port.transparency_mask;
+			port.cell->parameters[ID::CE_OVER_SRST] = port.ce_over_srst;
+			port.cell->parameters[ID::ARST_VALUE] = port.arst_value;
+			port.cell->parameters[ID::SRST_VALUE] = port.srst_value;
+			port.cell->parameters[ID::INIT_VALUE] = port.init_value;
 			port.cell->setPort(ID::CLK, port.clk);
 			port.cell->setPort(ID::EN, port.en);
+			port.cell->setPort(ID::ARST, port.arst);
+			port.cell->setPort(ID::SRST, port.srst);
 			port.cell->setPort(ID::ADDR, port.addr);
 			port.cell->setPort(ID::DATA, port.data);
 		}
@@ -284,8 +317,14 @@ namespace {
 				mrd.attributes = cell->attributes;
 				mrd.clk_enable = cell->parameters.at(ID::CLK_ENABLE).as_bool();
 				mrd.clk_polarity = cell->parameters.at(ID::CLK_POLARITY).as_bool();
+				mrd.ce_over_srst = cell->parameters.at(ID::CE_OVER_SRST).as_bool();
+				mrd.arst_value = cell->parameters.at(ID::ARST_VALUE);
+				mrd.srst_value = cell->parameters.at(ID::SRST_VALUE);
+				mrd.init_value = cell->parameters.at(ID::INIT_VALUE);
 				mrd.clk = cell->getPort(ID::CLK);
 				mrd.en = cell->getPort(ID::EN);
+				mrd.arst = cell->getPort(ID::ARST);
+				mrd.srst = cell->getPort(ID::SRST);
 				mrd.addr = cell->getPort(ID::ADDR);
 				mrd.data = cell->getPort(ID::DATA);
 				res.rd_ports.push_back(mrd);
@@ -390,8 +429,14 @@ namespace {
 			mrd.transparency_mask.resize(n_wr_ports);
 			for (int j = 0; j < n_wr_ports; j++)
 				mrd.transparency_mask[j] = cell->parameters.at(ID::RD_TRANSPARENCY_MASK).extract(i * n_wr_ports + j, 1).as_bool();
+			mrd.ce_over_srst = cell->parameters.at(ID::RD_CE_OVER_SRST).extract(i, 1).as_bool();
+			mrd.arst_value = cell->parameters.at(ID::RD_ARST_VALUE).extract(i * res.width, res.width);
+			mrd.srst_value = cell->parameters.at(ID::RD_SRST_VALUE).extract(i * res.width, res.width);
+			mrd.init_value = cell->parameters.at(ID::RD_INIT_VALUE).extract(i * res.width, res.width);
 			mrd.clk = cell->getPort(ID::RD_CLK).extract(i, 1);
 			mrd.en = cell->getPort(ID::RD_EN).extract(i, 1);
+			mrd.arst = cell->getPort(ID::RD_ARST).extract(i, 1);
+			mrd.srst = cell->getPort(ID::RD_SRST).extract(i, 1);
 			mrd.addr = cell->getPort(ID::RD_ADDR).extract(i * abits, abits);
 			mrd.data = cell->getPort(ID::RD_DATA).extract(i * res.width, res.width);
 			res.rd_ports.push_back(mrd);
@@ -441,7 +486,7 @@ std::vector<Mem> Mem::get_selected_memories(Module *module) {
 	return res;
 }
 
-Cell *Mem::extract_rdff(int idx) {
+Cell *Mem::extract_rdff(int idx, FfInitVals *initvals) {
 	MemRd &port = rd_ports[idx];
 
 	if (!port.clk_enable)
@@ -480,16 +525,50 @@ Cell *Mem::extract_rdff(int idx) {
 		}
 	}
 
-	c = module->addDffe(stringf("%s$rdreg[%d]", memid.c_str(), idx), port.clk, port.en, sig_d, port.data, port.clk_polarity, true);
+	log_assert(port.arst == State::S0 || port.srst == State::S0);
+	IdString name = stringf("%s$rdreg[%d]", memid.c_str(), idx);
+	FfData ff(initvals);
+	ff.width = width;
+	ff.has_clk = true;
+	ff.sig_clk = port.clk;
+	ff.pol_clk = port.clk_polarity;
+	if (port.en != State::S1) {
+		ff.has_en = true;
+		ff.pol_en = true;
+		ff.sig_en = port.en;
+	}
+	if (port.arst != State::S0) {
+		ff.has_arst = true;
+		ff.sig_arst = port.arst;
+		ff.pol_arst = true;
+		ff.val_arst = port.arst_value;
+	}
+	if (port.srst != State::S0) {
+		ff.has_srst = true;
+		ff.sig_srst = port.srst;
+		ff.pol_srst = true;
+		ff.val_srst = port.srst_value;
+		ff.ce_over_srst = ff.has_en && port.ce_over_srst;
+	}
+	ff.sig_d = sig_d;
+	ff.sig_q = port.data;
+	ff.val_init = port.init_value;
 	port.data = async_d;
+	c = ff.emit(module, name);
 
 	log("Extracted data FF from read port %d of %s.%s: %s\n",
 			idx, log_id(module), log_id(memid), log_id(c));
 
 	port.en = State::S1;
 	port.clk = State::S0;
+	port.arst = State::S0;
+	port.srst = State::S0;
 	port.clk_enable = false;
 	port.clk_polarity = true;
+	port.ce_over_srst = false;
+	port.arst_value = Const(State::Sx, width);
+	port.srst_value = Const(State::Sx, width);
+	port.init_value = Const(State::Sx, width);
 
 	return c;
 }

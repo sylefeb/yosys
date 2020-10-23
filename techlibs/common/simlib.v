@@ -2159,7 +2159,7 @@ endmodule
 // --------------------------------------------------------
 `ifndef SIMLIB_NOMEM
 
-module \$memrd (CLK, EN, ADDR, DATA);
+module \$memrd (CLK, EN, ARST, SRST, ADDR, DATA);
 
 parameter MEMID = "";
 parameter ABITS = 8;
@@ -2168,8 +2168,12 @@ parameter WIDTH = 8;
 parameter CLK_ENABLE = 0;
 parameter CLK_POLARITY = 0;
 parameter TRANSPARENCY_MASK = 0;
+parameter CE_OVER_SRST = 0;
+parameter ARST_VALUE = 0;
+parameter SRST_VALUE = 0;
+parameter INIT_VALUE = 0;
 
-input CLK, EN;
+input CLK, EN, ARST, SRST;
 input [ABITS-1:0] ADDR;
 output [WIDTH-1:0] DATA;
 
@@ -2247,6 +2251,10 @@ parameter signed RD_PORTS = 1;
 parameter RD_CLK_ENABLE = 1'b1;
 parameter RD_CLK_POLARITY = 1'b1;
 parameter RD_TRANSPARENCY_MASK = 1'b1;
+parameter RD_ARST_VALUE = 1'b0;
+parameter RD_CE_OVER_SRST = 1'b0;
+parameter RD_SRST_VALUE = 1'b0;
+parameter RD_INIT_VALUE = 1'b0;
 
 parameter signed WR_PORTS = 1;
 parameter WR_CLK_ENABLE = 1'b1;
@@ -2255,6 +2263,8 @@ parameter WR_PRIORITY_MASK = 1'b1;
 
 input [RD_PORTS-1:0] RD_CLK;
 input [RD_PORTS-1:0] RD_EN;
+input [RD_PORTS-1:0] RD_ARST;
+input [RD_PORTS-1:0] RD_SRST;
 input [RD_PORTS*ABITS-1:0] RD_ADDR;
 output reg [RD_PORTS*WIDTH-1:0] RD_DATA;
 
@@ -2287,22 +2297,29 @@ endfunction
 initial begin
 	for (i = 0; i < SIZE; i = i+1)
 		memory[i] = INIT >>> (i*WIDTH);
+	RD_DATA <= RD_INIT_VALUE;
 end
 
-always @(RD_CLK, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA) begin
+always @(RD_CLK, RD_ARST, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA) begin
 `ifdef SIMLIB_MEMDELAY
 	#`SIMLIB_MEMDELAY;
 `endif
 	for (i = 0; i < RD_PORTS; i = i+1) begin
-		if (RD_EN[i] && port_active(RD_CLK_ENABLE[i], RD_CLK_POLARITY[i], LAST_RD_CLK[i], RD_CLK[i])) begin
-			// $display("Read from %s: addr=%b data=%b", MEMID, RD_ADDR[i*ABITS +: ABITS],  memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET]);
-			RD_DATA[i*WIDTH +: WIDTH] <= memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET];
-			for (j = 0; j < WR_PORTS; j = j+1) begin
-				// No check for port_active on write port — TRANSPARENCY_MASK only allowed on same-clock ports.
-				if (RD_TRANSPARENCY_MASK[i * WR_PORTS + j] && RD_ADDR[i*ABITS +: ABITS] == WR_ADDR[j*ABITS +: ABITS]) begin
-					for (k = 0; k < WIDTH; k = k+1) begin
-						if (WR_EN[j*WIDTH+k]) begin
-							RD_DATA[i*WIDTH + k] <= WR_DATA[j*WIDTH+k];
+		if (RD_ARST[i]) begin
+			RD_DATA[i*WIDTH +: WIDTH] <= RD_ARST_VALUE[i*WIDTH +: WIDTH];
+		end else if (port_active(RD_CLK_ENABLE[i], RD_CLK_POLARITY[i], LAST_RD_CLK[i], RD_CLK[i])) begin
+			if (RD_SRST[i] && (!RD_CE_OVER_SRST[i] || RD_EN[i])) begin
+				RD_DATA[i*WIDTH +: WIDTH] <= RD_SRST_VALUE[i*WIDTH +: WIDTH];
+			end else if (RD_EN[i]) begin
+				// $display("Read from %s: addr=%b data=%b", MEMID, RD_ADDR[i*ABITS +: ABITS],  memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET]);
+				RD_DATA[i*WIDTH +: WIDTH] <= memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET];
+				for (j = 0; j < WR_PORTS; j = j+1) begin
+					// No check for port_active on write port — TRANSPARENCY_MASK only allowed on same-clock ports.
+					if (RD_TRANSPARENCY_MASK[i * WR_PORTS + j] && RD_ADDR[i*ABITS +: ABITS] == WR_ADDR[j*ABITS +: ABITS]) begin
+						for (k = 0; k < WIDTH; k = k+1) begin
+							if (WR_EN[j*WIDTH+k]) begin
+								RD_DATA[i*WIDTH + k] <= WR_DATA[j*WIDTH+k];
+							end
 						end
 					end
 				end

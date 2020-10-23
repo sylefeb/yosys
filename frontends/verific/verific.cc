@@ -1311,10 +1311,16 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::se
 				cell->parameters[ID::CLK_ENABLE] = false;
 				cell->parameters[ID::CLK_POLARITY] = true;
 				cell->parameters[ID::TRANSPARENCY_MASK] = State::S0;
+				cell->parameters[ID::CE_OVER_SRST] = false;
+				cell->parameters[ID::ARST_VALUE] = Const(State::Sx, GetSize(data));
+				cell->parameters[ID::SRST_VALUE] = Const(State::Sx, GetSize(data));
+				cell->parameters[ID::INIT_VALUE] = Const(State::Sx, GetSize(data));
 				cell->parameters[ID::ABITS] = GetSize(addr);
 				cell->parameters[ID::WIDTH] = GetSize(data);
 				cell->setPort(ID::CLK, RTLIL::State::Sx);
-				cell->setPort(ID::EN, RTLIL::State::Sx);
+				cell->setPort(ID::EN, RTLIL::State::S1);
+				cell->setPort(ID::ARST, RTLIL::State::S0);
+				cell->setPort(ID::SRST, RTLIL::State::S0);
 				cell->setPort(ID::ADDR, addr);
 				cell->setPort(ID::DATA, data);
 			}

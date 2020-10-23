@@ -348,7 +348,8 @@ consolidated using resource sharing passes. In some cases this drastically reduc
 ports on the memory cell. In this alternative, memory initialization data is represented by {\tt \$meminit} cells,
 which allow delaying constant folding for initialization addresses and data until after the frontend finishes.
 
-The {\tt \$memrd} cells have a clock input \B{CLK}, an enable input \B{EN}, an
+The {\tt \$memrd} cells have a clock input \B{CLK}, an enable input \B{EN},
+an asynchronous reset input \B{ARST}, a synchronous reset input \B{SRST}, an
 address input \B{ADDR}, and a data output \B{DATA}. They also have the
 following parameters:
 
@@ -376,6 +377,19 @@ to the other port's \B{PORTID} is set here, this port's reads will show the othe
 value when both ports are active simultanously at the same address; otherwise, this port's reads
 will be unaffected by the other port's writes in the same cycle.  Setting this to 1 is only
 valid for ports that share clock and clock polarity.
+
+\item \B{INIT\_VALUE} \\
+The initial value of the data output, for synchronous ports.
+
+\item \B{CE\_OVER\_SRST} \\
+If synchronous reset is used, this determines the relative priority of \B{SRST} and \B{EN} inputs.
+When this parameter is non-zero, \B{EN} has priority, otherwise \B{SRST} has priority.
+
+\item \B{ARST\_VALUE} \\
+The value that \B{ARST} will reset the data output to, if enabled.
+
+\item \B{SRST\_VALUE} \\
+The value that \B{SRST} will reset the data output to, if enabled.
 \end{itemize}
 
 The {\tt \$memwr} cells have a clock input \B{CLK}, an enable input \B{EN} (one
@@ -471,6 +485,18 @@ This parameter is \B{RD\_PORTS} bits wide, containing a clock polarity bit for e
 This parameter is \B{RD\_PORTS*WR\_PORTS} bits wide, containing a concatenation of all
 \B{TRANSPARENCY\_MASK} values of the original {\tt \$memrd} cells.
 
+\item \B{RD\_CE\_OVER\_SRST} \\
+This parameter is \B{RD\_PORTS} bits wide, determining relative synchronous reset and enable priority for each read port.
+
+\item \B{RD\_INIT\_VALUE} \\
+This parameter is \B{RD\_PORTS*WIDTH} bits wide, containing the initial value for each synchronous read port.
+
+\item \B{RD\_ARST\_VALUE} \\
+This parameter is \B{RD\_PORTS*WIDTH} bits wide, containing the asynchronous reset value for each synchronous read port.
+
+\item \B{RD\_SRST\_VALUE} \\
+This parameter is \B{RD\_PORTS*WIDTH} bits wide, containing the synchronous reset value for each synchronous read port.
+
 \item \B{WR\_PORTS} \\
 The number of write ports on this memory cell.
 
@@ -494,6 +520,12 @@ This input is \B{RD\_PORTS} bits wide, containing all clock signals for the read
 
 \item \B{RD\_EN} \\
 This input is \B{RD\_PORTS} bits wide, containing all enable signals for the read ports.
+
+\item \B{RD\_ARST} \\
+This input is \B{RD\_PORTS} bits wide, containing all asynchronous reset signals for the read ports.
+
+\item \B{RD\_SRST} \\
+This input is \B{RD\_PORTS} bits wide, containing all synchronous reset signals for the read ports.
 
 \item \B{RD\_ADDR} \\
 This input is \B{RD\_PORTS}*\B{ABITS} bits wide, containing all address signals for the read ports.

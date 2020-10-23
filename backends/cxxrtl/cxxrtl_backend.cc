@@ -2384,11 +2384,15 @@ struct CxxrtlWorker {
 			}
 			for (auto cell : module->cells()) {
 				// Collect groups of memory write ports read by every transparent read port.
-				if (cell->type == ID($memrd) && cell->getParam(ID::CLK_ENABLE).as_bool() && cell->getPort(ID::CLK).is_wire() &&
-				    cell->getParam(ID::TRANSPARENT).as_bool()) {
+				if (cell->type == ID($memrd) && cell->getParam(ID::CLK_ENABLE).as_bool() && cell->getPort(ID::CLK).is_wire()) {
 					RTLIL::SigBit clk_bit = sigmap(cell->getPort(ID::CLK))[0];
 					const RTLIL::Memory *memory = module->memories[cell->getParam(ID::MEMID).decode_string()];
+					Const transparency_mask = cell->getParam(ID::TRANSPARENCY_MASK);
 					for (auto memwr_cell : memwr_per_domain[{clk_bit, memory}]) {
+						int portid = memwr_cell->getParam(ID::PORTID).as_int();
+						if (portid >= GetSize(transparency_mask) || transparency_mask[portid] != State::S1)
+							continue;
+
 						transparent_for[cell].insert(memwr_cell);
 						// Our implementation of transparent $memrd cells reads \EN, \ADDR and \DATA from every $memwr cell
 						// in the same domain, which isn't directly visible in the netlist. Add these uses explicitly.

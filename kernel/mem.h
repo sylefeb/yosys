@@ -28,7 +28,7 @@ struct MemRd {
 	dict<IdString, Const> attributes;
 	Cell *cell;
 	bool clk_enable, clk_polarity;
-	bool transparent;
+	std::vector<bool> transparency_mask;
 	SigSpec clk, en, addr, data;
 	MemRd() : cell(nullptr) {}
 };

@@ -64,7 +64,6 @@ public:
 		param_bool(ID::CLR_POLARITY);
 		param_bool(ID::EN_POLARITY);
 		param_bool(ID::SET_POLARITY);
-		param_bool(ID::TRANSPARENT);
 	#undef param_bool
 
 	#define param_int(_n) if (param == _n) return value.as_int();

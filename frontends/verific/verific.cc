@@ -1310,7 +1310,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::se
 				cell->parameters[ID::MEMID] = memory->name.str();
 				cell->parameters[ID::CLK_ENABLE] = false;
 				cell->parameters[ID::CLK_POLARITY] = true;
-				cell->parameters[ID::TRANSPARENT] = false;
+				cell->parameters[ID::TRANSPARENCY_MASK] = State::S0;
 				cell->parameters[ID::ABITS] = GetSize(addr);
 				cell->parameters[ID::WIDTH] = GetSize(data);
 				cell->setPort(ID::CLK, RTLIL::State::Sx);

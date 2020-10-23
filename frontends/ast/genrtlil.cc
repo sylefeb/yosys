@@ -1566,7 +1566,7 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 
 			cell->parameters[ID::CLK_ENABLE] = RTLIL::Const(0);
 			cell->parameters[ID::CLK_POLARITY] = RTLIL::Const(0);
-			cell->parameters[ID::TRANSPARENT] = RTLIL::Const(0);
+			cell->parameters[ID::TRANSPARENCY_MASK] = RTLIL::Const(0);
 
 			if (!sign_hint)
 				is_signed = false;

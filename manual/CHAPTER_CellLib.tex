@@ -370,9 +370,12 @@ the \B{CLK} input is not used.
 Clock is active on the positive edge if this parameter has the value {\tt 1'b1} and on the negative
 edge if this parameter is {\tt 1'b0}.
 
-\item \B{TRANSPARENT} \\
-If this parameter is set to {\tt 1'b1}, a read and write to the same address in the same cycle will
-return the new value. Otherwise the old value is returned.
+\item \B{TRANSPARENCY\_MASK} \\
+A bitmask of write ports that this port is transparent with — if the bit index corresponding
+to the other port's \B{PORTID} is set here, this port's reads will show the other port's written
+value when both ports are active simultanously at the same address; otherwise, this port's reads
+will be unaffected by the other port's writes in the same cycle.  Setting this to 1 is only
+valid for ports that share clock and clock polarity.
 \end{itemize}
 
 The {\tt \$memwr} cells have a clock input \B{CLK}, an enable input \B{EN} (one
@@ -405,7 +408,8 @@ The 0-based numeric identifier of this write port, used to identify it in \B{PRI
 A bitmask of write ports that this port wins over in a write conflict — if the bit index corresponding
 to the other port's \B{PORTID} is set here, this port's writes win over the other port's writes
 when both happen simultanously.  The priority relationship should be a partial order.  If no port
-has priority over the other, the behavior of conflict is undefined.
+has priority over the other, the behavior of conflict is undefined.  Setting this to 1 is only valid
+for ports that share clock and clock polarity.
 \end{itemize}
 
 The {\tt \$meminit} cells have an address input \B{ADDR} and a data input \B{DATA}, with the width
@@ -463,8 +467,9 @@ This parameter is \B{RD\_PORTS} bits wide, containing a clock enable bit for eac
 \item \B{RD\_CLK\_POLARITY} \\
 This parameter is \B{RD\_PORTS} bits wide, containing a clock polarity bit for each read port.
 
-\item \B{RD\_TRANSPARENT} \\
-This parameter is \B{RD\_PORTS} bits wide, containing a transparent bit for each read port.
+\item \B{RD\_TRANSPARENCY\_MASK} \\
+This parameter is \B{RD\_PORTS*WR\_PORTS} bits wide, containing a concatenation of all
+\B{TRANSPARENCY\_MASK} values of the original {\tt \$memrd} cells.
 
 \item \B{WR\_PORTS} \\
 The number of write ports on this memory cell.

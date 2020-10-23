@@ -685,10 +685,26 @@ grow_read_ports:;
 	for (int cell_port_i = 0; cell_port_i < GetSize(mem.rd_ports); cell_port_i++)
 	{
 		auto &port = mem.rd_ports[cell_port_i];
-		bool transp = port.transparent;
+		bool transp = false;
+		if (port.clk_enable) {
+			bool found = false;
+			for (int i = 0; i < GetSize(mem.wr_ports); i++) {
+				auto &wport = mem.wr_ports[i];
+				if (wport.clk_enable && wport.clk == port.clk && wport.clk_polarity == port.clk_polarity) {
+					bool port_transp = port.transparency_mask[i];
+					if (!found) {
+						found = true;
+						transp = port_transp;
+					} else {
+						if (transp != port_transp) {
 
-		if (mem.wr_ports.empty())
-			transp = false;
+							log("        Read port %d unsupported (mixed transparency).\n", cell_port_i);
+							return false;
+						}
+					}
+				}
+			}
+		}
 
 		pair<SigBit, bool> clkdom(port.clk, port.clk_polarity);
 		if (!port.clk_enable)

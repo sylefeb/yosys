@@ -73,6 +73,7 @@ Yosys 0.9 .. Yosys 0.9-dev
     - Memory cell changes:
       - $memwr cells now have PORTID parameter
       - new partial-order PRIORITY_MASK parameter for $memwr cells, replacing total-order PRIORITY
+      - new TRANSPARENCY_MASK parameter for $memrd cells, replacing TRANSPARENT
 
 Yosys 0.8 .. Yosys 0.9
 ----------------------

@@ -10,7 +10,7 @@ module \$mem (RD_CLK, RD_EN, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
 	parameter RD_PORTS = 1;
 	parameter RD_CLK_ENABLE = 1'b1;
 	parameter RD_CLK_POLARITY = 1'b1;
-	parameter RD_TRANSPARENT = 1'b1;
+	parameter RD_TRANSPARENCY_MASK = 0;
 
 	parameter WR_PORTS = 1;
 	parameter WR_CLK_ENABLE = 1'b1;
@@ -55,7 +55,7 @@ module \$mem (RD_CLK, RD_EN, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA);
 			_TECHMAP_FAIL_ <= 1;
 
 		// we expect positive read clock and non-transparent reads
-		if (RD_TRANSPARENT || !RD_CLK_ENABLE || !RD_CLK_POLARITY)
+		if (RD_TRANSPARENCY_MASK || !RD_CLK_ENABLE || !RD_CLK_POLARITY)
 			_TECHMAP_FAIL_ <= 1;
 
 		// we expect positive write clock

@@ -70,7 +70,7 @@ void Mem::emit() {
 		cell->parameters[ID::SIZE] = Const(size);
 		cell->parameters[ID::RD_PORTS] = Const(GetSize(rd_ports));
 		cell->parameters[ID::WR_PORTS] = Const(GetSize(wr_ports));
-		Const rd_clk_enable, rd_clk_polarity, rd_transparent;
+		Const rd_clk_enable, rd_clk_polarity, rd_transparency_mask;
 		Const wr_clk_enable, wr_clk_polarity, wr_priority_mask;
 		SigSpec rd_clk, rd_en, rd_addr, rd_data;
 		SigSpec wr_clk, wr_en, wr_addr, wr_data;
@@ -87,7 +87,9 @@ void Mem::emit() {
 			}
 			rd_clk_enable.bits.push_back(State(port.clk_enable));
 			rd_clk_polarity.bits.push_back(State(port.clk_polarity));
-			rd_transparent.bits.push_back(State(port.transparent));
+			log_assert(GetSize(port.transparency_mask) == GetSize(wr_ports));
+			for (bool bit : port.transparency_mask)
+				rd_transparency_mask.bits.push_back(State(bit));
 			rd_clk.append(port.clk);
 			log_assert(GetSize(port.clk) == 1);
 			rd_en.append(port.en);
@@ -102,11 +104,14 @@ void Mem::emit() {
 		if (rd_ports.empty()) {
 			rd_clk_enable = State::S0;
 			rd_clk_polarity = State::S0;
-			rd_transparent = State::S0;
+			rd_transparency_mask = State::S0;
+		}
+		if (wr_ports.empty()) {
+			rd_transparency_mask = State::S0;
 		}
 		cell->parameters[ID::RD_CLK_ENABLE] = rd_clk_enable;
 		cell->parameters[ID::RD_CLK_POLARITY] = rd_clk_polarity;
-		cell->parameters[ID::RD_TRANSPARENT] = rd_transparent;
+		cell->parameters[ID::RD_TRANSPARENCY_MASK] = rd_transparency_mask;
 		cell->setPort(ID::RD_CLK, rd_clk);
 		cell->setPort(ID::RD_EN, rd_en);
 		cell->setPort(ID::RD_ADDR, rd_addr);
@@ -118,6 +123,7 @@ void Mem::emit() {
 			}
 			wr_clk_enable.bits.push_back(State(port.clk_enable));
 			wr_clk_polarity.bits.push_back(State(port.clk_polarity));
+			log_assert(GetSize(port.priority_mask) == GetSize(wr_ports));
 			for (bool bit : port.priority_mask)
 				wr_priority_mask.bits.push_back(State(bit));
 			wr_clk.append(port.clk);
@@ -173,7 +179,7 @@ void Mem::emit() {
 			port.cell->parameters[ID::WIDTH] = width;
 			port.cell->parameters[ID::CLK_ENABLE] = port.clk_enable;
 			port.cell->parameters[ID::CLK_POLARITY] = port.clk_polarity;
-			port.cell->parameters[ID::TRANSPARENT] = port.transparent;
+			port.cell->parameters[ID::TRANSPARENCY_MASK] = port.transparency_mask;
 			port.cell->setPort(ID::CLK, port.clk);
 			port.cell->setPort(ID::EN, port.en);
 			port.cell->setPort(ID::ADDR, port.addr);
@@ -217,6 +223,9 @@ void Mem::remove_wr_port(int idx) {
 	wr_ports.erase(wr_ports.begin() + idx);
 	for (auto &port: wr_ports) {
 		port.priority_mask.erase(port.priority_mask.begin() + idx);
+	}
+	for (auto &port: rd_ports) {
+		port.transparency_mask.erase(port.transparency_mask.begin() + idx);
 	}
 }
 
@@ -275,7 +284,6 @@ namespace {
 				mrd.attributes = cell->attributes;
 				mrd.clk_enable = cell->parameters.at(ID::CLK_ENABLE).as_bool();
 				mrd.clk_polarity = cell->parameters.at(ID::CLK_POLARITY).as_bool();
-				mrd.transparent = cell->parameters.at(ID::TRANSPARENT).as_bool();
 				mrd.clk = cell->getPort(ID::CLK);
 				mrd.en = cell->getPort(ID::EN);
 				mrd.addr = cell->getPort(ID::ADDR);
@@ -308,6 +316,15 @@ namespace {
 					bool has_prio = other_portid < GetSize(orig_prio_mask) && orig_prio_mask[other_portid] == State::S1;
 					port.priority_mask.push_back(has_prio);
 				}
+			}
+		}
+		for (auto &port : res.rd_ports) {
+			Const orig_trans_mask = port.cell->parameters.at(ID::TRANSPARENCY_MASK);
+			for (int i = 0; i < GetSize(res.wr_ports); i++) {
+				auto &other_port = res.wr_ports[i];
+				int other_portid = other_port.cell->parameters.at(ID::PORTID).as_int();
+				bool is_trans = other_portid < GetSize(orig_trans_mask) && orig_trans_mask[other_portid] == State::S1;
+				port.transparency_mask.push_back(is_trans);
 			}
 		}
 		if (index.inits.count(mem->name)) {
@@ -365,18 +382,20 @@ namespace {
 				}
 			}
 		}
+		int n_wr_ports = cell->parameters.at(ID::WR_PORTS).as_int();
 		for (int i = 0; i < cell->parameters.at(ID::RD_PORTS).as_int(); i++) {
 			MemRd mrd;
 			mrd.clk_enable = cell->parameters.at(ID::RD_CLK_ENABLE).extract(i, 1).as_bool();
 			mrd.clk_polarity = cell->parameters.at(ID::RD_CLK_POLARITY).extract(i, 1).as_bool();
-			mrd.transparent = cell->parameters.at(ID::RD_TRANSPARENT).extract(i, 1).as_bool();
+			mrd.transparency_mask.resize(n_wr_ports);
+			for (int j = 0; j < n_wr_ports; j++)
+				mrd.transparency_mask[j] = cell->parameters.at(ID::RD_TRANSPARENCY_MASK).extract(i * n_wr_ports + j, 1).as_bool();
 			mrd.clk = cell->getPort(ID::RD_CLK).extract(i, 1);
 			mrd.en = cell->getPort(ID::RD_EN).extract(i, 1);
 			mrd.addr = cell->getPort(ID::RD_ADDR).extract(i * abits, abits);
 			mrd.data = cell->getPort(ID::RD_DATA).extract(i * res.width, res.width);
 			res.rd_ports.push_back(mrd);
 		}
-		int n_wr_ports = cell->parameters.at(ID::WR_PORTS).as_int();
 		for (int i = 0; i < n_wr_ports; i++) {
 			MemWr mwr;
 			mwr.clk_enable = cell->parameters.at(ID::WR_CLK_ENABLE).extract(i, 1).as_bool();
@@ -430,22 +449,41 @@ Cell *Mem::extract_rdff(int idx) {
 
 	Cell *c;
 
-	if (port.transparent)
-	{
-		SigSpec sig_q = module->addWire(stringf("%s$rdreg[%d]$q", memid.c_str(), idx), GetSize(port.addr));
-		SigSpec sig_d = port.addr;
-		port.addr = sig_q;
-		c = module->addDffe(stringf("%s$rdreg[%d]", memid.c_str(), idx), port.clk, port.en, sig_d, sig_q, port.clk_polarity, true);
-	}
-	else
-	{
-		SigSpec sig_d = module->addWire(stringf("%s$rdreg[%d]$d", memid.c_str(), idx), width);
-		SigSpec sig_q = port.data;
-		port.data = sig_d;
-		c = module->addDffe(stringf("%s$rdreg[%d]", memid.c_str(), idx), port.clk, port.en, sig_d, sig_q, port.clk_polarity, true);
+	SigSpec async_d = module->addWire(stringf("%s$rdreg[%d]$d", memid.c_str(), idx), width);
+	SigSpec sig_d = async_d;
+
+	for (int i = 0; i < GetSize(wr_ports); i++) {
+		auto &wport = wr_ports[i];
+		if (port.transparency_mask[i]) {
+			log_assert(wport.clk_enable);
+			log_assert(wport.clk == port.clk);
+			log_assert(wport.clk_enable == port.clk_enable);
+			SigSpec addr_eq;
+			if (port.addr != wport.addr)
+				addr_eq = module->Eq(stringf("%s$rdtransen[%d][%d]$d", memid.c_str(), idx, i), port.addr, wport.addr);
+			int pos = 0;
+			while (pos < width) {
+				int epos = pos;
+				while (epos < width && wport.en[epos] == wport.en[pos])
+					epos++;
+				SigSpec cur = sig_d.extract(pos, epos-pos);
+				SigSpec other = wport.data.extract(pos, epos-pos);
+				SigSpec cond;
+				if (port.addr != wport.addr)
+					cond = module->And(stringf("%s$rdtransgate[%d][%d][%d]$d", memid.c_str(), idx, i, pos), wport.en[pos], addr_eq);
+				else
+					cond = wport.en[pos];
+				SigSpec merged = module->Mux(stringf("%s$rdtransmux[%d][%d][%d]$d", memid.c_str(), idx, i, pos), cur, other, cond);
+				sig_d.replace(pos, merged);
+				pos = epos;
+			}
+		}
 	}
 
-	log("Extracted %s FF from read port %d of %s.%s: %s\n", port.transparent ? "addr" : "data",
+	c = module->addDffe(stringf("%s$rdreg[%d]", memid.c_str(), idx), port.clk, port.en, sig_d, port.data, port.clk_polarity, true);
+	port.data = async_d;
+
+	log("Extracted data FF from read port %d of %s.%s: %s\n",
 			idx, log_id(module), log_id(memid), log_id(c));
 
 	port.en = State::S1;

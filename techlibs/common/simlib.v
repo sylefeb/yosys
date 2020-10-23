@@ -2167,7 +2167,7 @@ parameter WIDTH = 8;
 
 parameter CLK_ENABLE = 0;
 parameter CLK_POLARITY = 0;
-parameter TRANSPARENT = 0;
+parameter TRANSPARENCY_MASK = 0;
 
 input CLK, EN;
 input [ABITS-1:0] ADDR;
@@ -2246,7 +2246,7 @@ parameter signed INIT = 1'bx;
 parameter signed RD_PORTS = 1;
 parameter RD_CLK_ENABLE = 1'b1;
 parameter RD_CLK_POLARITY = 1'b1;
-parameter RD_TRANSPARENT = 1'b1;
+parameter RD_TRANSPARENCY_MASK = 1'b1;
 
 parameter signed WR_PORTS = 1;
 parameter WR_CLK_ENABLE = 1'b1;
@@ -2265,7 +2265,7 @@ input [WR_PORTS*WIDTH-1:0] WR_DATA;
 
 reg [WIDTH-1:0] memory [SIZE-1:0];
 
-integer i, j;
+integer i, j, k;
 reg [WR_PORTS-1:0] LAST_WR_CLK;
 reg [RD_PORTS-1:0] LAST_RD_CLK;
 
@@ -2294,9 +2294,19 @@ always @(RD_CLK, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA) begin
 	#`SIMLIB_MEMDELAY;
 `endif
 	for (i = 0; i < RD_PORTS; i = i+1) begin
-		if (!RD_TRANSPARENT[i] && RD_CLK_ENABLE[i] && RD_EN[i] && port_active(RD_CLK_ENABLE[i], RD_CLK_POLARITY[i], LAST_RD_CLK[i], RD_CLK[i])) begin
+		if (RD_EN[i] && port_active(RD_CLK_ENABLE[i], RD_CLK_POLARITY[i], LAST_RD_CLK[i], RD_CLK[i])) begin
 			// $display("Read from %s: addr=%b data=%b", MEMID, RD_ADDR[i*ABITS +: ABITS],  memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET]);
 			RD_DATA[i*WIDTH +: WIDTH] <= memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET];
+			for (j = 0; j < WR_PORTS; j = j+1) begin
+				// No check for port_active on write port — TRANSPARENCY_MASK only allowed on same-clock ports.
+				if (RD_TRANSPARENCY_MASK[i * WR_PORTS + j] && RD_ADDR[i*ABITS +: ABITS] == WR_ADDR[j*ABITS +: ABITS]) begin
+					for (k = 0; k < WIDTH; k = k+1) begin
+						if (WR_EN[j*WIDTH+k]) begin
+							RD_DATA[i*WIDTH + k] <= WR_DATA[j*WIDTH+k];
+						end
+					end
+				end
+			end
 		end
 	end
 
@@ -2305,15 +2315,8 @@ always @(RD_CLK, RD_ADDR, RD_DATA, WR_CLK, WR_EN, WR_ADDR, WR_DATA) begin
 			for (j = 0; j < WIDTH; j = j+1)
 				if (WR_EN[i*WIDTH+j]) begin
 					// $display("Write to %s: addr=%b data=%b", MEMID, WR_ADDR[i*ABITS +: ABITS], WR_DATA[i*WIDTH+j]);
-					memory[WR_ADDR[i*ABITS +: ABITS] - OFFSET][j] = WR_DATA[i*WIDTH+j];
+					memory[WR_ADDR[i*ABITS +: ABITS] - OFFSET][j] <= WR_DATA[i*WIDTH+j];
 				end
-	end
-
-	for (i = 0; i < RD_PORTS; i = i+1) begin
-		if ((RD_TRANSPARENT[i] || !RD_CLK_ENABLE[i]) && port_active(RD_CLK_ENABLE[i], RD_CLK_POLARITY[i], LAST_RD_CLK[i], RD_CLK[i])) begin
-			// $display("Transparent read from %s: addr=%b data=%b", MEMID, RD_ADDR[i*ABITS +: ABITS],  memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET]);
-			RD_DATA[i*WIDTH +: WIDTH] <= memory[RD_ADDR[i*ABITS +: ABITS] - OFFSET];
-		end
 	end
 
 	LAST_RD_CLK <= RD_CLK;

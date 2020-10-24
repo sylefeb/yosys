@@ -8,6 +8,7 @@ module \$mem (RD_CLK, RD_EN, RD_ARST, RD_SRST, RD_ADDR, RD_DATA, WR_CLK, WR_EN, 
 	parameter signed INIT = 1'bx;
 
 	parameter RD_PORTS = 1;
+	parameter RD_WIDE_CONTINUATION = 1'b0;
 	parameter RD_CLK_ENABLE = 1'b1;
 	parameter RD_CLK_POLARITY = 1'b1;
 	parameter RD_TRANSPARENCY_MASK = 0;
@@ -17,6 +18,7 @@ module \$mem (RD_CLK, RD_EN, RD_ARST, RD_SRST, RD_ADDR, RD_DATA, WR_CLK, WR_EN, 
 	parameter RD_INIT_VALUE = 1'b0;
 
 	parameter WR_PORTS = 1;
+	parameter WR_WIDE_CONTINUATION = 1'b0;
 	parameter WR_CLK_ENABLE = 1'b1;
 	parameter WR_CLK_POLARITY = 1'b1;
 	parameter WR_PRIORITY_MASK = 0;

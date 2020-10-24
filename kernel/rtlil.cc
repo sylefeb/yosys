@@ -1400,6 +1400,7 @@ namespace {
 				param(ID::SIZE);
 				param(ID::OFFSET);
 				param(ID::INIT);
+				param_bits(ID::RD_WIDE_CONTINUATION, max(1, param(ID::RD_PORTS)));
 				param_bits(ID::RD_CLK_ENABLE, max(1, param(ID::RD_PORTS)));
 				param_bits(ID::RD_CLK_POLARITY, max(1, param(ID::RD_PORTS)));
 				param_bits(ID::RD_TRANSPARENCY_MASK, max(1, param(ID::RD_PORTS) * param(ID::WR_PORTS)));
@@ -1407,6 +1408,7 @@ namespace {
 				param_bits(ID::RD_CE_OVER_SRST, param(ID::RD_PORTS));
 				param_bits(ID::RD_SRST_VALUE, param(ID::RD_PORTS) * param(ID::WIDTH));
 				param_bits(ID::RD_INIT_VALUE, param(ID::RD_PORTS) * param(ID::WIDTH));
+				param_bits(ID::WR_WIDE_CONTINUATION, max(1, param(ID::WR_PORTS)));
 				param_bits(ID::WR_CLK_ENABLE, max(1, param(ID::WR_PORTS)));
 				param_bits(ID::WR_CLK_POLARITY, max(1, param(ID::WR_PORTS)));
 				param_bits(ID::WR_PRIORITY_MASK, max(1, param(ID::WR_PORTS) * param(ID::WR_PORTS)));

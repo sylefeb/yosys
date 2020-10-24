@@ -204,9 +204,14 @@ struct MemoryShareWorker
 				if (non_feedback_nets.count(bit))
 					goto not_pure_feedback_port;
 
-			async_rd_bits[port.addr].resize(max(GetSize(async_rd_bits), GetSize(port.data)));
-			for (int i = 0; i < GetSize(port.data); i++)
-				async_rd_bits[port.addr][i].insert(port.data[i]);
+			for (int sub = 0; sub < (1 << port.wide_log2); sub++) {
+				SigSpec addr = port.addr;
+				for (int i = 0; i < port.wide_log2; i++)
+					addr[i] = State(sub >> i & 1);
+				async_rd_bits[addr].resize(mem.width);
+				for (int i = 0; i < mem.width; i++)
+					async_rd_bits[port.addr][i].insert(port.data[i + sub * mem.width]);
+			}
 
 		not_pure_feedback_port:;
 		}
@@ -221,7 +226,7 @@ struct MemoryShareWorker
 		{
 			auto &port = mem.wr_ports[i];
 
-			if (!async_rd_bits.count(port.addr))
+			if (!port.wide_log2 && !async_rd_bits.count(port.addr))
 				continue;
 
 			log("  Analyzing write port %d.\n", i);
@@ -232,8 +237,12 @@ struct MemoryShareWorker
 				{
 					std::map<RTLIL::SigBit, bool> state;
 					std::set<std::map<RTLIL::SigBit, bool>> conditions;
+					int sub = j / mem.width;
+					SigSpec addr = port.addr;
+					for (int k = 0; k < port.wide_log2; k++)
+						addr[k] = State(sub >> k & 1);
 
-					find_data_feedback(async_rd_bits.at(port.addr).at(j), port.data[j], state, conditions);
+					find_data_feedback(async_rd_bits.at(addr).at(j % mem.width), port.data[j], state, conditions);
 					port.en[j] = conditions_to_logic(conditions, port.en[j], created_conditions);
 				}
 
@@ -356,7 +365,8 @@ struct MemoryShareWorker
 		bool cache_clk_enable = false;
 		bool cache_clk_polarity = false;
 		RTLIL::SigSpec cache_clk;
-		pool<int> removed_ports;
+		int cache_wide_log2 = 0;
+		bool did_anything = false;
 
 		for (int i = 0; i < GetSize(mem.wr_ports); i++)
 		{
@@ -364,9 +374,11 @@ struct MemoryShareWorker
 			RTLIL::SigSpec addr = sigmap_xmux(port.addr);
 
 			if (port.clk_enable != cache_clk_enable ||
+					port.wide_log2 != cache_wide_log2 ||
 					(cache_clk_enable && (sigmap(port.clk) != cache_clk ||
 					port.clk_polarity != cache_clk_polarity)))
 			{
+				cache_wide_log2 = port.wide_log2;
 				cache_clk_enable = port.clk_enable;
 				cache_clk_polarity = port.clk_polarity;
 				cache_clk = sigmap(port.clk);
@@ -413,7 +425,7 @@ struct MemoryShareWorker
 
 				for (int j = last_i+1; j < i; j++)
 				{
-					if (removed_ports.count(j))
+					if (mem.wr_ports[j].removed)
 						continue;
 
 					for (int k = 0; k < int(en_bits.size()); k++)
@@ -450,7 +462,8 @@ struct MemoryShareWorker
 				port.en = merged_en;
 				port.data = merged_data;
 
-				removed_ports.insert(last_i);
+				mem.wr_ports[last_i].removed = true;
+				did_anything = true;
 
 				log("      Active bits: ");
 				std::vector<RTLIL::SigBit> en_bits = sigmap(port.en);
@@ -463,13 +476,7 @@ struct MemoryShareWorker
 			last_port_by_addr[addr] = i;
 		}
 
-		// Clean up `wr_ports'
-
-		for (int i = GetSize(mem.wr_ports)-1; i >= 0; i--)
-			if (removed_ports.count(i))
-				mem.remove_wr_port(i);
-
-		if (!removed_ports.empty())
+		if (did_anything)
 			mem.emit();
 	}
 
@@ -507,18 +514,21 @@ struct MemoryShareWorker
 		bool cache_clk_enable = false;
 		bool cache_clk_polarity = false;
 		RTLIL::SigSpec cache_clk;
+		int cache_wide_log2 = 0;
 
 		for (int i = 0; i < GetSize(mem.wr_ports); i++)
 		{
 			auto &port = mem.wr_ports[i];
 
 			if (port.clk_enable != cache_clk_enable ||
+					port.wide_log2 != cache_wide_log2 ||
 					(cache_clk_enable && (sigmap(port.clk) != cache_clk ||
 					port.clk_polarity != cache_clk_polarity)))
 			{
 				cache_clk_enable = port.clk_enable;
 				cache_clk_polarity = port.clk_polarity;
 				cache_clk = sigmap(port.clk);
+				cache_wide_log2 = port.wide_log2;
 			}
 			else if (i > 0 && considered_ports.count(i-1) && considered_ports.count(i))
 				considered_port_pairs.insert(i);
@@ -589,7 +599,7 @@ struct MemoryShareWorker
 
 		// merge subsequent ports if possible
 
-		pool<int> removed_ports;
+		bool did_anything = false;
 		for (int i = 0; i < GetSize(mem.wr_ports); i++)
 		{
 			if (!considered_port_pairs.count(i))
@@ -639,16 +649,11 @@ struct MemoryShareWorker
 			module->addMux(NEW_ID, grouped_last_en, grouped_this_en, this_en_active, grouped_en);
 			mem.wr_ports[i].en = en;
 
-			removed_ports.insert(i-1);
+			mem.wr_ports[i-1].removed = true;
+			did_anything = true;
 		}
 
-		// Clean up `wr_ports'
-
-		for (int i = GetSize(mem.wr_ports)-1; i >= 0; i--)
-			if (removed_ports.count(i))
-				mem.remove_wr_port(i);
-
-		if (!removed_ports.empty())
+		if (did_anything)
 			mem.emit();
 	}
 

@@ -2248,6 +2248,7 @@ parameter signed WIDTH = 8;
 parameter signed INIT = 1'bx;
 
 parameter signed RD_PORTS = 1;
+parameter RD_WIDE_CONTINUATION = 1'b0;
 parameter RD_CLK_ENABLE = 1'b1;
 parameter RD_CLK_POLARITY = 1'b1;
 parameter RD_TRANSPARENCY_MASK = 1'b1;
@@ -2257,6 +2258,7 @@ parameter RD_SRST_VALUE = 1'b0;
 parameter RD_INIT_VALUE = 1'b0;
 
 parameter signed WR_PORTS = 1;
+parameter WR_WIDE_CONTINUATION = 1'b0;
 parameter WR_CLK_ENABLE = 1'b1;
 parameter WR_CLK_POLARITY = 1'b1;
 parameter WR_PRIORITY_MASK = 1'b1;

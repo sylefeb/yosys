@@ -75,6 +75,7 @@ Yosys 0.9 .. Yosys 0.9-dev
       - new partial-order PRIORITY_MASK parameter for $memwr cells, replacing total-order PRIORITY
       - new TRANSPARENCY_MASK parameter for $memrd cells, replacing TRANSPARENT
       - initial value and reset support for synchronous $memrd cells
+      - support for mixed-width ports, added "memory_narrow" pass
 
 Yosys 0.8 .. Yosys 0.9
 ----------------------

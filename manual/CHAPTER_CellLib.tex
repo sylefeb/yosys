@@ -361,7 +361,9 @@ The name of the RTLIL::Memory object that is associated with this read port.
 The number of address bits (width of the \B{ADDR} input port).
 
 \item \B{WIDTH} \\
-The number of data bits (width of the \B{DATA} output port).
+The number of data bits (width of the \B{DATA} output port).  Note that this may be a power-of-two
+multiple of the underlying memory's width -- such ports are called wide ports and access an aligned
+group of cells at once.  In this case, the corresponding low bits of \B{ADDR} must be tied to 0.
 
 \item \B{CLK\_ENABLE} \\
 When this parameter is non-zero, the clock is used. Otherwise this read port is asynchronous and
@@ -372,7 +374,7 @@ Clock is active on the positive edge if this parameter has the value {\tt 1'b1} 
 edge if this parameter is {\tt 1'b0}.
 
 \item \B{TRANSPARENCY\_MASK} \\
-A bitmask of write ports that this port is transparent with — if the bit index corresponding
+A bitmask of write ports that this port is transparent with -- if the bit index corresponding
 to the other port's \B{PORTID} is set here, this port's reads will show the other port's written
 value when both ports are active simultanously at the same address; otherwise, this port's reads
 will be unaffected by the other port's writes in the same cycle.  Setting this to 1 is only
@@ -404,7 +406,9 @@ The name of the RTLIL::Memory object that is associated with this write port.
 The number of address bits (width of the \B{ADDR} input port).
 
 \item \B{WIDTH} \\
-The number of data bits (width of the \B{DATA} output port).
+The number of data bits (width of the \B{DATA} output port).  Like with {\tt \$memrd} cells,
+the width is allowed to be any power-of-two multiple of memory width, with the corresponding
+restriction on address.
 
 \item \B{CLK\_ENABLE} \\
 When this parameter is non-zero, the clock is used. Otherwise this write port is asynchronous and
@@ -419,7 +423,7 @@ The 0-based numeric identifier of this write port, used to identify it in \B{PRI
 \end{itemize}
 
 \item \B{PRIORITY\_MASK} \\
-A bitmask of write ports that this port wins over in a write conflict — if the bit index corresponding
+A bitmask of write ports that this port wins over in a write conflict -- if the bit index corresponding
 to the other port's \B{PORTID} is set here, this port's writes win over the other port's writes
 when both happen simultanously.  The priority relationship should be a partial order.  If no port
 has priority over the other, the behavior of conflict is undefined.  Setting this to 1 is only valid
@@ -475,6 +479,12 @@ The initial memory contents.
 \item \B{RD\_PORTS} \\
 The number of read ports on this memory cell.
 
+\item \B{RD\_WIDE\_CONTINUATION} \\
+This parameter is \B{RD\_PORTS} bits wide, containing a bitmask of "wide continuation" read ports.
+Such ports are used to represent the extra data bits of wide ports in the combined cell, and must
+have all control signals identical with the preceding port, except for address, which must have
+the proper sub-cell address encoded in the low bits.
+
 \item \B{RD\_CLK\_ENABLE} \\
 This parameter is \B{RD\_PORTS} bits wide, containing a clock enable bit for each read port.
 
@@ -499,6 +509,9 @@ This parameter is \B{RD\_PORTS*WIDTH} bits wide, containing the synchronous rese
 
 \item \B{WR\_PORTS} \\
 The number of write ports on this memory cell.
+
+\item \B{WR\_WIDE\_CONTINUATION} \\
+This parameter is \B{WR\_PORTS} bits wide, containing a bitmask of "wide continuation" write ports.
 
 \item \B{WR\_CLK\_ENABLE} \\
 This parameter is \B{WR\_PORTS} bits wide, containing a clock enable bit for each write port.

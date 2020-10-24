@@ -1107,6 +1107,8 @@ struct FirrtlWorker
 						register_memory(m);
 					}
 					mp = &memories.at(mem_id);
+					if (mp->width != width)
+						log_error("mixed-width memories (%s.%s) currently unsupported\n", log_id(module), mem_id.c_str());
 					int portNum = 0;
 					bool transparency = false;
 					string data_expr = make_expr(dataSig);

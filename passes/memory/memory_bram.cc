@@ -1082,6 +1082,17 @@ void handle_memory(Mem &mem, const rules_t &rules)
 			log("Read ports with initial value are not supported, skipping.\n");
 			return;
 		}
+		if (port.wide_log2) {
+			log("Wide read ports are not supported, skipping.\n");
+			return;
+		}
+	}
+
+	for (auto &port : mem.wr_ports) {
+		if (port.wide_log2) {
+			log("Wide write ports are not supported, skipping.\n");
+			return;
+		}
 	}
 
 	pool<pair<IdString, int>> failed_brams;

@@ -26,22 +26,26 @@
 YOSYS_NAMESPACE_BEGIN
 
 struct MemRd {
+	bool removed;
 	dict<IdString, Const> attributes;
 	Cell *cell;
+	int wide_log2;
 	bool clk_enable, clk_polarity, ce_over_srst;
 	Const arst_value, srst_value, init_value;
 	std::vector<bool> transparency_mask;
 	SigSpec clk, en, arst, srst, addr, data;
-	MemRd() : cell(nullptr) {}
+	MemRd() : removed(false), cell(nullptr) {}
 };
 
 struct MemWr {
+	bool removed;
 	dict<IdString, Const> attributes;
 	Cell *cell;
+	int wide_log2;
 	bool clk_enable, clk_polarity;
 	std::vector<bool> priority_mask;
 	SigSpec clk, en, addr, data;
-	MemWr() : cell(nullptr) {}
+	MemWr() : removed(false), cell(nullptr) {}
 };
 
 struct MemInit {
@@ -66,8 +70,7 @@ struct Mem {
 
 	void remove();
 	void emit();
-	void remove_wr_port(int idx);
-	void remove_rd_port(int idx);
+	void narrow();
 	void clear_inits();
 	Const get_init_data() const;
 	static std::vector<Mem> get_all_memories(Module *module);

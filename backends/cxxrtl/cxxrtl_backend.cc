@@ -2759,9 +2759,9 @@ struct CxxrtlWorker {
 		}
 	}
 
-	void check_design(RTLIL::Design *design, bool &has_top, bool &has_sync_init, bool &has_packed_mem)
+	void check_design(RTLIL::Design *design, bool &has_top, bool &has_sync_init, bool &has_packed_mem, bool &has_wide_ports)
 	{
-		has_sync_init = has_packed_mem = has_top = false;
+		has_sync_init = has_packed_mem = has_wide_ports = has_top = false;
 
 		for (auto module : design->modules()) {
 			if (module->get_blackbox_attribute() && !module->has_attribute(ID(cxxrtl_blackbox)))
@@ -2782,18 +2782,32 @@ struct CxxrtlWorker {
 						has_sync_init = true;
 
 			// The Mem constructor also checks for well-formedness of $meminit cells, if any.
-			for (auto &mem : Mem::get_all_memories(module))
+			for (auto &mem : Mem::get_all_memories(module)) {
 				if (mem.packed)
 					has_packed_mem = true;
+				for (auto &port : mem.rd_ports)
+					if (port.wide_log2)
+						has_wide_ports = true;
+				for (auto &port : mem.wr_ports)
+					if (port.wide_log2)
+						has_wide_ports = true;
+			}
+
+			for (auto cell : module->cells())
+				if (cell->type.in(ID($memrd), ID($memwr))) {
+					const RTLIL::Memory *memory = module->memories[cell->getParam(ID::MEMID).decode_string()];
+					if (memory->width != cell->getParam(ID::WIDTH).as_int())
+						has_wide_ports = true;
+				}
 		}
 	}
 
 	void prepare_design(RTLIL::Design *design)
 	{
 		bool did_anything = false;
-		bool has_top, has_sync_init, has_packed_mem;
+		bool has_top, has_sync_init, has_packed_mem, has_wide_ports;
 		log_push();
-		check_design(design, has_top, has_sync_init, has_packed_mem);
+		check_design(design, has_top, has_sync_init, has_packed_mem, has_wide_ports);
 		if (run_hierarchy && !has_top) {
 			Pass::call(design, "hierarchy -auto-top");
 			did_anything = true;
@@ -2817,10 +2831,15 @@ struct CxxrtlWorker {
 			Pass::call(design, "memory_unpack");
 			did_anything = true;
 		}
+		// Wide memory read/write ports are not currently natively supported.
+		if (has_wide_ports) {
+			Pass::call(design, "memory_narrow");
+			did_anything = true;
+		}
 		// Recheck the design if it was modified.
 		if (did_anything)
-			check_design(design, has_top, has_sync_init, has_packed_mem);
-		log_assert(has_top && !has_sync_init && !has_packed_mem);
+			check_design(design, has_top, has_sync_init, has_packed_mem, has_wide_ports);
+		log_assert(has_top && !has_sync_init && !has_packed_mem && !has_wide_ports);
 		log_pop();
 		if (did_anything)
 			log_spacer();

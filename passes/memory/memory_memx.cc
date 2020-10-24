@@ -55,6 +55,10 @@ struct MemoryMemxPass : public Pass {
 				IdString memid = cell->getParam(ID::MEMID).decode_string();
 				RTLIL::Memory *mem = module->memories.at(memid);
 
+				if (mem->width != cell->getParam(ID::WIDTH).as_int())
+					log_error("Cell %s.%s (%s) is a wide read port. Wide $memrd cells are not supported by memory_memx!\n",
+							log_id(module), log_id(cell), log_id(cell->type));
+
 				int lowest_addr = mem->start_offset;
 				int highest_addr = mem->start_offset + mem->size - 1;
 

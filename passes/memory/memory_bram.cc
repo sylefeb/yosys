@@ -1093,6 +1093,12 @@ void handle_memory(Mem &mem, const rules_t &rules)
 			log("Wide write ports are not supported, skipping.\n");
 			return;
 		}
+		for (auto bit : port.priority_mask) {
+			if (bit) {
+				log("Write ports with priorities are not supported, skipping.\n");
+				return;
+			}
+		}
 	}
 
 	pool<pair<IdString, int>> failed_brams;

@@ -53,6 +53,7 @@ void Mem::remove() {
 }
 
 void Mem::emit() {
+	check();
 	std::vector<int> rd_left;
 	for (int i = 0; i < GetSize(rd_ports); i++) {
 		auto &port = rd_ports[i];
@@ -378,6 +379,63 @@ Const Mem::get_init_data() const {
 	return init_data;
 }
 
+void Mem::check() {
+	for (auto &port : rd_ports) {
+		if (port.removed)
+			continue;
+		log_assert(GetSize(port.clk) == 1);
+		log_assert(GetSize(port.en) == 1);
+		log_assert(GetSize(port.arst) == 1);
+		log_assert(GetSize(port.srst) == 1);
+		log_assert(GetSize(port.data) == (width << port.wide_log2));
+		log_assert(GetSize(port.init_value) == (width << port.wide_log2));
+		log_assert(GetSize(port.arst_value) == (width << port.wide_log2));
+		log_assert(GetSize(port.srst_value) == (width << port.wide_log2));
+		log_assert(GetSize(port.transparency_mask) == GetSize(wr_ports));
+		if (!port.clk_enable) {
+			log_assert(port.en == State::S1);
+			log_assert(port.arst == State::S0);
+			log_assert(port.srst == State::S0);
+		}
+		for (int i = 0; i < GetSize(wr_ports); i++) {
+			auto &wport = wr_ports[i];
+			if (port.transparency_mask[i] && !wport.removed) {
+				log_assert(port.clk_enable);
+				log_assert(wport.clk_enable);
+				log_assert(port.clk == wport.clk);
+				log_assert(port.clk_polarity == wport.clk_polarity);
+			}
+		}
+	}
+	for (int i = 0; i < GetSize(wr_ports); i++) {
+		auto &port = wr_ports[i];
+		if (port.removed)
+			continue;
+		log_assert(GetSize(port.clk) == 1);
+		log_assert(GetSize(port.en) == (width << port.wide_log2));
+		log_assert(GetSize(port.data) == (width << port.wide_log2));
+		log_assert(GetSize(port.priority_mask) == GetSize(wr_ports));
+		for (int j = 0; j < GetSize(wr_ports); j++) {
+			auto &wport = wr_ports[j];
+			if (port.priority_mask[j] && !wport.removed) {
+				log_assert(j < i);
+				// The following conditions would be entirely reasonable,
+				// but unfortunately don't really mesh with how verilog frontend
+				// is doing things (making "asynchronous" write ports driven
+				// by registers that are later merged).
+#if 0
+				log_assert(port.clk_enable);
+				log_assert(wport.clk_enable);
+#endif
+				if (port.clk_enable && wport.clk_enable) {
+					log_assert(port.clk == wport.clk);
+					log_assert(port.clk_polarity == wport.clk_polarity);
+				}
+			}
+		}
+	}
+}
+
 namespace {
 
 	struct MemIndex {
@@ -485,6 +543,7 @@ namespace {
 			for (auto &it : inits)
 				res.inits.push_back(it.second);
 		}
+		res.check();
 		return res;
 	}
 
@@ -572,6 +631,7 @@ namespace {
 			mwr.data = cell->getPort(ID::WR_DATA).extract(i * res.width, (ni - i) * res.width);
 			res.wr_ports.push_back(mwr);
 		}
+		res.check();
 		return res;
 	}
 
@@ -656,6 +716,7 @@ Cell *Mem::extract_rdff(int idx, FfInitVals *initvals) {
 				}
 			}
 		}
+		port.transparency_mask[i] = false;
 	}
 
 	log_assert(port.arst == State::S0 || port.srst == State::S0);

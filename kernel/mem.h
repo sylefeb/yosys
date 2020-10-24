@@ -72,6 +72,7 @@ struct Mem {
 	void emit();
 	void narrow();
 	void clear_inits();
+	void check();
 	Const get_init_data() const;
 	static std::vector<Mem> get_all_memories(Module *module);
 	static std::vector<Mem> get_selected_memories(Module *module);

@@ -28,6 +28,7 @@ PRIVATE_NAMESPACE_BEGIN
 
 struct MemoryShareWorker
 {
+	bool flag_nosat, flag_nowide;
 	RTLIL::Design *design;
 	RTLIL::Module *module;
 	SigMap sigmap, sigmap_xmux;
@@ -328,7 +329,7 @@ struct MemoryShareWorker
 					continue;
 				if (port1.ce_over_srst != port2.ce_over_srst)
 					continue;
-				// The ports can still be merged if one od them can be widened.
+				// The ports can still be merged if one of them can be widened.
 				int wide_log2 = std::max(port1.wide_log2, port2.wide_log2);
 				if (GetSize(port1.addr) <= wide_log2)
 					continue;
@@ -341,6 +342,8 @@ struct MemoryShareWorker
 				if (sigmap_xmux(port1.addr.extract_end(wide_log2)) != sigmap_xmux(port2.addr.extract_end(wide_log2))) {
 					// Incompatible addresses after widening.  Last chance — widen both
 					// ports by one more bit to merge them.
+					if (flag_nowide)
+						continue;
 					wide_log2++;
 					if (sigmap_xmux(port1.addr.extract_end(wide_log2)) != sigmap_xmux(port2.addr.extract_end(wide_log2)))
 						continue;
@@ -439,7 +442,7 @@ fail:;
 					continue;
 				if (port1.clk_polarity != port2.clk_polarity)
 					continue;
-				// The ports can still be merged if one od them can be widened.
+				// The ports can still be merged if one of them can be widened.
 				int wide_log2 = std::max(port1.wide_log2, port2.wide_log2);
 				if (GetSize(port1.addr) <= wide_log2)
 					continue;
@@ -452,6 +455,8 @@ fail:;
 				if (sigmap_xmux(port1.addr.extract_end(wide_log2)) != sigmap_xmux(port2.addr.extract_end(wide_log2))) {
 					// Incompatible addresses after widening.  Last chance — widen both
 					// ports by one more bit to merge them.
+					if (flag_nowide)
+						continue;
 					wide_log2++;
 					if (sigmap_xmux(port1.addr.extract_end(wide_log2)) != sigmap_xmux(port2.addr.extract_end(wide_log2)))
 						continue;
@@ -681,7 +686,7 @@ fail:;
 	// Setup and run
 	// -------------
 
-	MemoryShareWorker(RTLIL::Design *design) : design(design), modwalker(design) {}
+	MemoryShareWorker(RTLIL::Design *design, bool flag_nosat, bool flag_nowide) : flag_nosat(flag_nosat), flag_nowide(flag_nowide), design(design), modwalker(design) {}
 
 	void operator()(RTLIL::Module* module)
 	{
@@ -720,6 +725,9 @@ fail:;
 			while (consolidate_wr_by_addr(mem));
 		}
 
+		if (flag_nosat)
+			return;
+
 		cone_ct.setup_internals();
 		cone_ct.cell_types.erase(ID($mul));
 		cone_ct.cell_types.erase(ID($mod));
@@ -747,7 +755,7 @@ struct MemorySharePass : public Pass {
 	{
 		//   |---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|
 		log("\n");
-		log("    memory_share [selection]\n");
+		log("    memory_share [-nosat] [-nowide] [selection]\n");
 		log("\n");
 		log("This pass merges share-able memory ports into single memory ports.\n");
 		log("\n");
@@ -760,9 +768,13 @@ struct MemorySharePass : public Pass {
 		log("  - When multiple write ports access the same address then this is converted\n");
 		log("    to a single write port with a more complex data and/or enable logic path.\n");
 		log("\n");
+		log("  - When multiple read or write ports access adjacent aligned addresses, they are\n");
+		log("    merged to a single wide read or write port.  This transformation can be\n");
+		log("    disabled with the \"-nowide\" option.\n");
+		log("\n");
 		log("  - When multiple write ports are never accessed at the same time (a SAT\n");
 		log("    solver is used to determine this), then the ports are merged into a single\n");
-		log("    write port.\n");
+		log("    write port.  This transformation can be disabled with the \"-nosat\" option.\n");
 		log("\n");
 		log("Note that in addition to the algorithms implemented in this pass, the $memrd\n");
 		log("and $memwr cells are also subject to generic resource sharing passes (and other\n");
@@ -770,9 +782,24 @@ struct MemorySharePass : public Pass {
 		log("\n");
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override {
+		bool flag_nosat = false;
+		bool flag_nowide = false;
+
 		log_header(design, "Executing MEMORY_SHARE pass (consolidating $memrd/$memwr cells).\n");
-		extra_args(args, 1, design);
-		MemoryShareWorker msw(design);
+		size_t argidx;
+		for (argidx = 1; argidx < args.size(); argidx++) {
+			if (args[argidx] == "-nosat") {
+				flag_nosat = true;
+				continue;
+			}
+			if (args[argidx] == "-nowide") {
+				flag_nowide = true;
+				continue;
+			}
+			break;
+		}
+		extra_args(args, argidx, design);
+		MemoryShareWorker msw(design, flag_nosat, flag_nowide);
 
 		for (auto module : design->selected_modules())
 			msw(module);

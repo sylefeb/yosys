@@ -80,6 +80,7 @@ struct Mem {
 	void emulate_priority(int idx1, int idx2);
 	void emulate_transparency(int widx, int ridx);
 	void prepare_wr_merge(int idx1, int idx2);
+	void widen_prep(int wide_log2);
 	void widen_wr_port(int idx, int wide_log2);
 	Mem(Module *module, IdString memid, int width, int start_offset, int size) : module(module), memid(memid), packed(false), mem(nullptr), cell(nullptr), width(width), start_offset(start_offset), size(size) {}
 };

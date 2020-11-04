@@ -385,6 +385,7 @@ struct MemoryShareWorker
 				}
 				{
 					log("  Merging ports %d, %d (address %s).\n", i, j, log_signal(port1.addr));
+					mem.widen_prep(wide_log2);
 					SigSpec new_data = module->addWire(NEW_ID, mem.width << wide_log2);
 					module->connect(port1.data, new_data.extract(sub1 * mem.width, mem.width << port1.wide_log2));
 					module->connect(port2.data, new_data.extract(sub2 * mem.width, mem.width << port2.wide_log2));

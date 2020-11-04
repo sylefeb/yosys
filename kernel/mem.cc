@@ -380,6 +380,7 @@ Const Mem::get_init_data() const {
 }
 
 void Mem::check() {
+	int max_wide_log2 = 0;
 	for (auto &port : rd_ports) {
 		if (port.removed)
 			continue;
@@ -406,6 +407,7 @@ void Mem::check() {
 				log_assert(port.clk_polarity == wport.clk_polarity);
 			}
 		}
+		max_wide_log2 = std::max(max_wide_log2, port.wide_log2);
 	}
 	for (int i = 0; i < GetSize(wr_ports); i++) {
 		auto &port = wr_ports[i];
@@ -433,7 +435,11 @@ void Mem::check() {
 				}
 			}
 		}
+		max_wide_log2 = std::max(max_wide_log2, port.wide_log2);
 	}
+	int mask = (1 << max_wide_log2) - 1;
+	log_assert(!(start_offset & mask));
+	log_assert(!(size & mask));
 }
 
 namespace {
@@ -885,7 +891,21 @@ void Mem::prepare_wr_merge(int idx1, int idx2) {
 	}
 }
 
+void Mem::widen_prep(int wide_log2) {
+	// Make sure start_offset and size are aligned to the port width,
+	// adjust if necessary.
+	int mask = ((1 << wide_log2) - 1);
+	int delta = start_offset & mask;
+	start_offset -= delta;
+	size += delta;
+	if (size & mask) {
+		size |= mask;
+		size++;
+	}
+}
+
 void Mem::widen_wr_port(int idx, int wide_log2) {
+	widen_prep(wide_log2);
 	auto &port = wr_ports[idx];
 	log_assert(port.wide_log2 <= wide_log2);
 	if (port.wide_log2 < wide_log2) {

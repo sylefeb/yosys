@@ -884,7 +884,11 @@ task_func_args:
 
 task_func_port:
 	attr wire_type range {
+		bool prev_was_input = true;
+		bool prev_was_output = false;
 		if (albuf) {
+			prev_was_input = astbuf1->is_input;
+			prev_was_output = astbuf1->is_output;
 			delete astbuf1;
 			if (astbuf2 != NULL)
 				delete astbuf2;
@@ -893,6 +897,12 @@ task_func_port:
 		albuf = $1;
 		astbuf1 = $2;
 		astbuf2 = checkRange(astbuf1, $3);
+		if (!astbuf1->is_input && !astbuf1->is_output) {
+			if (!sv_mode)
+				frontend_verilog_yyerror("task/function argument direction missing");
+			astbuf1->is_input = prev_was_input;
+			astbuf1->is_output = prev_was_output;
+		}
 	} wire_name |
 	{
 		if (!astbuf1) {
@@ -1890,6 +1900,9 @@ cell_parameter:
 		AstNode *node = new AstNode(AST_PARASET);
 		astbuf1->children.push_back(node);
 		node->children.push_back($1);
+	} |
+	'.' TOK_ID '(' ')' {
+		// just ignore empty parameters
 	} |
 	'.' TOK_ID '(' expr ')' {
 		AstNode *node = new AstNode(AST_PARASET);

@@ -336,6 +336,12 @@ void AstNode::dumpAst(FILE *f, std::string indent) const
 			fprintf(f, " %d", v);
 		fprintf(f, " ]");
 	}
+	if (!multirange_swapped.empty()) {
+		fprintf(f, " multirange_swapped=[");
+		for (auto v : multirange_swapped)
+			fprintf(f, " %d", v);
+		fprintf(f, " ]");
+	}
 	if (is_enum) {
 		fprintf(f, " type=enum");
 	}
@@ -1505,6 +1511,7 @@ RTLIL::IdString AstModule::derive(RTLIL::Design *design, const dict<RTLIL::IdStr
 		}
 
 	} else {
+		modname = new_modname;
 		log("Found cached RTLIL representation for module `%s'.\n", modname.c_str());
 	}
 

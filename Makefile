@@ -6,7 +6,7 @@ CONFIG := clang
 # CONFIG := emcc
 # CONFIG := wasi
 # CONFIG := mxe
-# CONFIG := msys2
+# CONFIG := msys2-32
 # CONFIG := msys2-64
 
 # features (the more the better)
@@ -16,6 +16,7 @@ ENABLE_GLOB := 1
 ENABLE_PLUGINS := 1
 ENABLE_READLINE := 1
 ENABLE_EDITLINE := 0
+ENABLE_GHDL := 0
 ENABLE_VERIFIC := 0
 ENABLE_COVER := 1
 ENABLE_LIBYOSYS := 0
@@ -31,6 +32,8 @@ ENABLE_GPROF := 0
 ENABLE_DEBUG := 0
 ENABLE_NDEBUG := 0
 ENABLE_CCACHE := 0
+# sccache is not always a drop-in replacement for ccache in practice
+ENABLE_SCCACHE := 0
 LINK_CURSES := 0
 LINK_TERMCAP := 0
 LINK_ABC := 0
@@ -123,7 +126,7 @@ LDFLAGS += -rdynamic
 LDLIBS += -lrt
 endif
 
-YOSYS_VER := 0.9+3582
+YOSYS_VER := 0.9+3833
 GIT_REV := $(shell cd $(YOSYS_SRC) && git rev-parse --short HEAD 2> /dev/null || echo UNKNOWN)
 OBJS = kernel/version_$(GIT_REV).o
 
@@ -136,7 +139,7 @@ bumpversion:
 # is just a symlink to your actual ABC working directory, as 'make mrproper'
 # will remove the 'abc' directory and you do not want to accidentally
 # delete your work on ABC..
-ABCREV = 341db25
+ABCREV = 4f5f73d
 ABCPULL = 1
 ABCURL ?= https://github.com/YosysHQ/abc
 ABCMKARGS = CC="$(CXX)" CXX="$(CXX)" ABC_USE_LIBSTDCXX=1
@@ -171,8 +174,7 @@ else
 PYTHON_CONFIG := $(PYTHON_EXECUTABLE)-config
 endif
 
-PYTHON_PREFIX := $(shell $(PYTHON_CONFIG) --prefix)
-PYTHON_DESTDIR := $(PYTHON_PREFIX)/lib/python$(PYTHON_VERSION)/site-packages
+PYTHON_DESTDIR := $(shell $(PYTHON_EXECUTABLE) -c "import site; print(site.getsitepackages()[-1]);")
 
 # Reload Makefile.conf to override python specific variables if defined
 ifneq ($(wildcard Makefile.conf),)
@@ -321,7 +323,7 @@ ABCMKARGS += ARCHFLAGS="-DWIN32_NO_DLL -DHAVE_STRUCT_TIMESPEC -fpermissive -w"
 ABCMKARGS += LIBS="lib/x86/pthreadVC2.lib -s" LDFLAGS="-Wl,--allow-multiple-definition" ABC_USE_NO_READLINE=1 CC="/usr/local/src/mxe/usr/bin/i686-w64-mingw32.static-gcc"
 EXE = .exe
 
-else ifeq ($(CONFIG),msys2)
+else ifeq ($(CONFIG),msys2-32)
 CXX = i686-w64-mingw32-g++
 LD = i686-w64-mingw32-g++
 CXXFLAGS += -std=c++11 -Os -D_POSIX_SOURCE -DYOSYS_WIN32_UNIX_DIR
@@ -344,7 +346,7 @@ ABCMKARGS += LIBS="-lpthread -s" ABC_USE_NO_READLINE=0 CC="x86_64-w64-mingw32-gc
 EXE = .exe
 
 else ifneq ($(CONFIG),none)
-$(error Invalid CONFIG setting '$(CONFIG)'. Valid values: clang, gcc, gcc-4.8, emcc, mxe, msys2, msys2-64)
+$(error Invalid CONFIG setting '$(CONFIG)'. Valid values: clang, gcc, gcc-4.8, emcc, mxe, msys2-32, msys2-64)
 endif
 
 ifeq ($(ENABLE_LIBYOSYS),1)
@@ -510,6 +512,14 @@ endif
 endif
 endif
 
+ifeq ($(ENABLE_GHDL),1)
+GHDL_PREFIX ?= $(PREFIX)
+GHDL_INCLUDE_DIR ?= $(GHDL_PREFIX)/include
+GHDL_LIB_DIR ?= $(GHDL_PREFIX)/lib
+CXXFLAGS += -I$(GHDL_INCLUDE_DIR) -DYOSYS_ENABLE_GHDL
+LDLIBS += $(GHDL_LIB_DIR)/libghdl.a $(file <$(GHDL_LIB_DIR)/libghdl.link)
+endif
+
 ifeq ($(ENABLE_VERIFIC),1)
 VERIFIC_DIR ?= /usr/local/src/verific_lib
 VERIFIC_COMPONENTS ?= verilog vhdl database util containers hier_tree
@@ -531,6 +541,10 @@ endif
 
 ifeq ($(ENABLE_CCACHE),1)
 CXX := ccache $(CXX)
+else
+ifeq ($(ENABLE_SCCACHE),1)
+CXX := sccache $(CXX)
+endif
 endif
 
 define add_share_file
@@ -587,6 +601,7 @@ $(eval $(call add_include_file,kernel/utils.h))
 $(eval $(call add_include_file,kernel/satgen.h))
 $(eval $(call add_include_file,kernel/ff.h))
 $(eval $(call add_include_file,kernel/ffinit.h))
+$(eval $(call add_include_file,kernel/mem.h))
 $(eval $(call add_include_file,libs/ezsat/ezsat.h))
 $(eval $(call add_include_file,libs/ezsat/ezminisat.h))
 $(eval $(call add_include_file,libs/sha1/sha1.h))
@@ -602,7 +617,12 @@ $(eval $(call add_include_file,backends/cxxrtl/cxxrtl_vcd_capi.cc))
 $(eval $(call add_include_file,backends/cxxrtl/cxxrtl_vcd_capi.h))
 
 OBJS += kernel/driver.o kernel/register.o kernel/rtlil.o kernel/log.o kernel/calc.o kernel/yosys.o
-OBJS += kernel/cellaigs.o kernel/celledges.o kernel/satgen.o
+ifeq ($(ENABLE_ABC),1)
+ifneq ($(ABCEXTERNAL),)
+kernel/yosys.o: CXXFLAGS += -DABCEXTERNAL='"$(ABCEXTERNAL)"'
+endif
+endif
+OBJS += kernel/cellaigs.o kernel/celledges.o kernel/satgen.o kernel/mem.o
 
 kernel/log.o: CXXFLAGS += -DYOSYS_SRC='"$(YOSYS_SRC)"'
 kernel/yosys.o: CXXFLAGS += -DYOSYS_DATDIR='"$(DATDIR)"' -DYOSYS_PROGRAM_PREFIX='"$(PROGRAM_PREFIX)"'
@@ -661,6 +681,10 @@ ifeq ($(LINK_ABC),1)
 OBJS += $(PROGRAM_PREFIX)yosys-libabc.a
 endif
 
+# prevent the CXXFLAGS set by this Makefile from reaching abc/Makefile,
+# especially the -MD flag which will break the build when CXX is clang
+unexport CXXFLAGS
+
 top-all: $(TARGETS) $(EXTRA_TARGETS)
 	@echo ""
 	@echo "  Build successful."
@@ -686,7 +710,7 @@ endif
 
 %.pyh: %.h
 	$(Q) mkdir -p $(dir $@)
-	$(P) cat $< | grep -E -v "#[ ]*(include|error)" | $(LD) -x c++ -o $@ -E -P -
+	$(P) cat $< | grep -E -v "#[ ]*(include|error)" | $(LD) $(CXXFLAGS) -x c++ -o $@ -E -P -
 
 ifeq ($(ENABLE_PYOSYS),1)
 $(PY_WRAPPER_FILE).cc: misc/$(PY_GEN_SCRIPT).py $(PY_WRAP_INCLUDES)
@@ -790,6 +814,7 @@ test: $(TARGETS) $(EXTRA_TARGETS)
 	+cd tests/arch/anlogic && bash run-test.sh $(SEEDOPT)
 	+cd tests/arch/gowin && bash run-test.sh $(SEEDOPT)
 	+cd tests/arch/intel_alm && bash run-test.sh $(SEEDOPT)
+	+cd tests/arch/nexus && bash run-test.sh $(SEEDOPT)
 	+cd tests/rpc && bash run-test.sh
 	+cd tests/memfile && bash run-test.sh
 	+cd tests/verilog && bash run-test.sh
@@ -846,9 +871,9 @@ ifeq ($(ENABLE_LIBYOSYS),1)
 	$(INSTALL_SUDO) cp libyosys.so $(DESTDIR)$(LIBDIR)/
 	$(INSTALL_SUDO) $(STRIP) -S $(DESTDIR)$(LIBDIR)/libyosys.so
 ifeq ($(ENABLE_PYOSYS),1)
-	$(INSTALL_SUDO) mkdir -p $(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys
-	$(INSTALL_SUDO) cp libyosys.so $(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/libyosys.so
-	$(INSTALL_SUDO) cp misc/__init__.py $(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/
+	$(INSTALL_SUDO) mkdir -p $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys
+	$(INSTALL_SUDO) cp libyosys.so $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/libyosys.so
+	$(INSTALL_SUDO) cp misc/__init__.py $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/
 endif
 endif
 
@@ -858,9 +883,9 @@ uninstall:
 ifeq ($(ENABLE_LIBYOSYS),1)
 	$(INSTALL_SUDO) rm -vf $(DESTDIR)$(LIBDIR)/libyosys.so
 ifeq ($(ENABLE_PYOSYS),1)
-	$(INSTALL_SUDO) rm -vf $(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/libyosys.so
-	$(INSTALL_SUDO) rm -vf $(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/__init__.py
-	$(INSTALL_SUDO) rmdir $(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys
+	$(INSTALL_SUDO) rm -vf $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/libyosys.so
+	$(INSTALL_SUDO) rm -vf $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/__init__.py
+	$(INSTALL_SUDO) rmdir $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys
 endif
 endif
 
@@ -973,13 +998,15 @@ config-mxe: clean
 	echo 'CONFIG := mxe' > Makefile.conf
 	echo 'ENABLE_PLUGINS := 0' >> Makefile.conf
 
-config-msys2: clean
-	echo 'CONFIG := msys2' > Makefile.conf
+config-msys2-32: clean
+	echo 'CONFIG := msys2-32' > Makefile.conf
 	echo 'ENABLE_PLUGINS := 0' >> Makefile.conf
+	echo "PREFIX := $(MINGW_PREFIX)" >> Makefile.conf
 
 config-msys2-64: clean
 	echo 'CONFIG := msys2-64' > Makefile.conf
 	echo 'ENABLE_PLUGINS := 0' >> Makefile.conf
+	echo "PREFIX := $(MINGW_PREFIX)" >> Makefile.conf
 
 config-cygwin: clean
 	echo 'CONFIG := cygwin' > Makefile.conf
@@ -1014,4 +1041,3 @@ echo-abc-rev:
 
 .PHONY: all top-all abc test install install-abc manual clean mrproper qtcreator coverage vcxsrc mxebin
 .PHONY: config-clean config-clang config-gcc config-gcc-static config-gcc-4.8 config-afl-gcc config-gprof config-sudo
-

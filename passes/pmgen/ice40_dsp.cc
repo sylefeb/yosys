@@ -73,11 +73,11 @@ void create_ice40_dsp(ice40_dsp_pm &pm)
 
 	// SB_MAC16 Input Interface
 	SigSpec A = st.sigA;
-	A.extend_u0(16, st.mul->getParam(ID::A_SIGNED).as_bool());
+	A.extend_u0(16, /*st.mul->getParam(ID::A_SIGNED).as_bool()*/ true);
 	log_assert(GetSize(A) == 16);
 
 	SigSpec B = st.sigB;
-	B.extend_u0(16, st.mul->getParam(ID::B_SIGNED).as_bool());
+	B.extend_u0(16, /*st.mul->getParam(ID::B_SIGNED).as_bool()*/ true);
 	log_assert(GetSize(B) == 16);
 
 	SigSpec CD = st.sigCD;
